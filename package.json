@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "googleapis": "^171.4.0",
     "katex": "^0.16.45",
     "localforage": "^1.10.0",
     "mammoth": "^1.12.0",

@@ -32,6 +32,12 @@ interface SettingsContextType {
   setTavilyApiKey: (key: string) => void;
   defaultWebSearch: boolean;
   setDefaultWebSearch: (enabled: boolean) => void;
+  gmailAccessToken: string | null;
+  setGmailAccessToken: (token: string | null) => void;
+  gmailRefreshToken: string | null;
+  setGmailRefreshToken: (token: string | null) => void;
+  gmailTokenExpiry: number | null;
+  setGmailTokenExpiry: (expiry: number | null) => void;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -45,6 +51,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [tavilyApiKey, setTavilyApiKey] = useState<string>("");
   const [defaultWebSearch, setDefaultWebSearch] = useState<boolean>(false);
+  const [gmailAccessToken, setGmailAccessToken] = useState<string | null>(null);
+  const [gmailRefreshToken, setGmailRefreshToken] = useState<string | null>(null);
+  const [gmailTokenExpiry, setGmailTokenExpiry] = useState<number | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Load from LocalStorage on mount
@@ -56,6 +65,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const storedProvider = localStorage.getItem("mimi_selectedProviderId");
     const storedTavily = localStorage.getItem("mimi_tavily_key");
     const storedDefaultSearch = localStorage.getItem("mimi_default_websearch");
+    const storedGmailAccess = localStorage.getItem("mimi_gmail_access_token");
+    const storedGmailRefresh = localStorage.getItem("mimi_gmail_refresh_token");
+    const storedGmailExpiry = localStorage.getItem("mimi_gmail_token_expiry");
     
     if (storedProviders) {
       try { setProviders(JSON.parse(storedProviders)); } catch (e) {}
@@ -95,6 +107,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     if (storedProvider) setSelectedProviderId(storedProvider);
     if (storedTavily) setTavilyApiKey(storedTavily);
     if (storedDefaultSearch !== null) setDefaultWebSearch(storedDefaultSearch === "true");
+    if (storedGmailAccess) setGmailAccessToken(storedGmailAccess);
+    if (storedGmailRefresh) setGmailRefreshToken(storedGmailRefresh);
+    if (storedGmailExpiry) setGmailTokenExpiry(Number(storedGmailExpiry));
     setIsLoaded(true);
   }, []);
 
@@ -111,7 +126,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("mimi_selectedProviderId", selectedProviderId || "");
     localStorage.setItem("mimi_tavily_key", tavilyApiKey);
     localStorage.setItem("mimi_default_websearch", defaultWebSearch.toString());
-  }, [providers, picos, selectedPicoId, selectedModelId, selectedProviderId, tavilyApiKey, defaultWebSearch, isLoaded]);
+    
+    if (gmailAccessToken) localStorage.setItem("mimi_gmail_access_token", gmailAccessToken);
+    else localStorage.removeItem("mimi_gmail_access_token");
+
+    if (gmailRefreshToken) localStorage.setItem("mimi_gmail_refresh_token", gmailRefreshToken);
+    else localStorage.removeItem("mimi_gmail_refresh_token");
+
+    if (gmailTokenExpiry) localStorage.setItem("mimi_gmail_token_expiry", gmailTokenExpiry.toString());
+    else localStorage.removeItem("mimi_gmail_token_expiry");
+  }, [providers, picos, selectedPicoId, selectedModelId, selectedProviderId, tavilyApiKey, defaultWebSearch, gmailAccessToken, gmailRefreshToken, gmailTokenExpiry, isLoaded]);
 
   const contextValue = React.useMemo(() => ({
     providers, setProviders,
@@ -120,8 +144,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     selectedModelId, setSelectedModelId,
     selectedProviderId, setSelectedProviderId,
     tavilyApiKey, setTavilyApiKey,
-    defaultWebSearch, setDefaultWebSearch
-  }), [providers, picos, selectedPicoId, selectedModelId, selectedProviderId, tavilyApiKey, defaultWebSearch]);
+    defaultWebSearch, setDefaultWebSearch,
+    gmailAccessToken, setGmailAccessToken,
+    gmailRefreshToken, setGmailRefreshToken,
+    gmailTokenExpiry, setGmailTokenExpiry
+  }), [providers, picos, selectedPicoId, selectedModelId, selectedProviderId, tavilyApiKey, defaultWebSearch, gmailAccessToken, gmailRefreshToken, gmailTokenExpiry]);
 
   return (
     <SettingsContext.Provider value={contextValue}>

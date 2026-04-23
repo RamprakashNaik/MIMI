@@ -19,6 +19,7 @@ export type Message = {
     url: string;
     content: string;
   }[];
+  gmailResults?: any[];
 };
 
 export type Chat = {

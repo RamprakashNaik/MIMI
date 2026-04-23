@@ -284,6 +284,43 @@ const DocChip = ({ name, type, fileSize, compact }: { name: string; type: string
 
 // ── SourcePanel ─────────────────────────────────────────────────────────────
 
+const GmailPanel = ({ emails }: { emails: any[] }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  if (!emails || emails.length === 0) return null;
+
+  return (
+    <div className="source-panel">
+      <button className="source-panel-toggle" onClick={() => setIsOpen(!isOpen)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:'14px', height:'14px'}}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+          <span>Emails Found ({emails.length})</span>
+        </div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '12px', height: '12px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
+      
+      {isOpen && (
+        <div className="source-list" style={{ gap: '0.75rem' }}>
+          {emails.map((email, i) => (
+            <div key={i} className="source-item" style={{ padding: '0.75rem', cursor: 'default' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{email.subject}</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>{new Date(email.date).toLocaleDateString()}</span>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--accent-glow)', marginBottom: '0.5rem' }}>From: {email.from}</div>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {email.snippet}...
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const SourcePanel = ({ sources }: { sources: { title: string; url: string; content: string }[] }) => {
   const [isOpen, setIsOpen] = useState(false);
   if (!sources || sources.length === 0) return null;
@@ -405,7 +442,10 @@ export default function Home() {
     selectedModelId, setSelectedModelId, 
     selectedProviderId, setSelectedProviderId,
     tavilyApiKey, setTavilyApiKey,
-    defaultWebSearch, setDefaultWebSearch
+    defaultWebSearch, setDefaultWebSearch,
+    gmailAccessToken, setGmailAccessToken,
+    gmailRefreshToken, setGmailRefreshToken,
+    gmailTokenExpiry, setGmailTokenExpiry
   } = useSettings();
   const { chats, activeChatId, setActiveChatId, createNewChat, addMessage, updateMessage, deleteChat, renameChat, togglePinChat, updateChatModel, deleteAllChats } = useChat();
   const { 
@@ -421,6 +461,7 @@ export default function Home() {
   const [isResizing, setIsResizing] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [isSearchingGmail, setIsSearchingGmail] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [deletePicoId, setDeletePicoId] = useState<string | null>(null);
@@ -625,6 +666,46 @@ export default function Home() {
     }
   }, [messages, addOrUpdateArtifact, artifacts]);
 
+  const ensureValidGmailToken = async () => {
+    if (!gmailRefreshToken || !gmailTokenExpiry) return null;
+    
+    // Refresh if expiring in less than 5 minutes
+    if (Date.now() + 5 * 60 * 1000 > gmailTokenExpiry) {
+      try {
+        const res = await fetch('/api/gmail/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: gmailRefreshToken })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGmailAccessToken(data.accessToken);
+          setGmailTokenExpiry(data.expiryDate);
+          return data.accessToken;
+        }
+      } catch (err) {
+        console.error("Token refresh failed:", err);
+      }
+    }
+    return gmailAccessToken;
+  };
+
+  // ── Gmail Auth Listener ──
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'GMAIL_AUTH_SUCCESS' && event.data.tokens) {
+        const { tokens } = event.data;
+        setGmailAccessToken(tokens.access_token);
+        if (tokens.refresh_token) setGmailRefreshToken(tokens.refresh_token);
+        setGmailTokenExpiry(tokens.expiry_date);
+        setShowSettings(false); // Close settings after successful auth
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [setGmailAccessToken, setGmailRefreshToken, setGmailTokenExpiry]);
+
   // ── Auto-reset/sync Web Search on Chat Switch ──
   useEffect(() => {
     setWebSearchEnabled(defaultWebSearch);
@@ -762,6 +843,35 @@ export default function Home() {
       }
     }
 
+    let gmailData: any[] = [];
+    const gmailKeywords = ["email", "gmail", "inbox", "message", "mail"];
+    const isGmailQuery = gmailKeywords.some(k => textToSend.toLowerCase().includes(k));
+
+    if (isGmailQuery && gmailAccessToken) {
+      setIsSearchingGmail(true);
+      try {
+        const validToken = await ensureValidGmailToken();
+        const gmailRes = await fetch("/api/gmail/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            accessToken: validToken, 
+            refreshToken: gmailRefreshToken,
+            query: textToSend,
+            maxResults: 5
+          })
+        });
+        if (gmailRes.ok) {
+          const { messages } = await gmailRes.json();
+          gmailData = messages;
+        }
+      } catch (err) {
+        console.warn("Gmail search failed:", err);
+      } finally {
+        setIsSearchingGmail(false);
+      }
+    }
+
     let formattedMessages = [...messages, userMessage].map(({ role, content, attachments }) => {
       if (attachments && attachments.length > 0) {
         const images = attachments.filter(a => a.dataUrl && !a.extractedText);
@@ -811,9 +921,13 @@ Format:
       ? `\n\nYou have access to real-time search results for the user's query. Use this information to provide a factual, up-to-date answer. Cite your sources if relevant.\n\n<search_results>\n${searchData.map((r, i) => `[${i+1}] ${r.title}: ${r.content}`).join("\n\n")}\n</search_results>`
       : "";
 
+    const GMAIL_INSTRUCTIONS = gmailData.length > 0
+      ? `\n\nYou have found the following relevant emails from the user's Gmail inbox. Use these to answer the user's question accurately. Mention who the email is from and the date if relevant.\n\n<gmail_results>\n${gmailData.map((e, i) => `[Email ${i+1}] From: ${e.from}, Subject: ${e.subject}, Date: ${e.date}\nSnippet: ${e.snippet}`).join("\n\n")}\n</gmail_results>`
+      : "";
+
     const systemContent = activePico && activePico.systemPrompt 
-      ? `${activePico.systemPrompt}\n\n${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}`
-      : `${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}`;
+      ? `${activePico.systemPrompt}\n\n${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}${GMAIL_INSTRUCTIONS}`
+      : `${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}${GMAIL_INSTRUCTIONS}`;
 
     formattedMessages = [
       { role: "system", content: systemContent },
@@ -828,7 +942,8 @@ Format:
       id: assistantId, 
       role: "assistant", 
       content: "",
-      searchResults: searchData.length > 0 ? searchData : undefined
+      searchResults: searchData.length > 0 ? searchData : undefined,
+      gmailResults: gmailData.length > 0 ? gmailData : undefined
     });
 
     try {
@@ -1197,6 +1312,10 @@ Format:
                         {msg.role === 'assistant' && msg.searchResults && (
                           <SourcePanel sources={msg.searchResults} />
                         )}
+
+                        {msg.role === 'assistant' && msg.gmailResults && (
+                          <GmailPanel emails={msg.gmailResults} />
+                        )}
                         
                         {msg.role === 'assistant' && !msg.content ? (
                           <span style={{display:'flex', gap:'0.4rem', alignItems:'center', padding:'0.1rem 0'}}>
@@ -1537,6 +1656,46 @@ Format:
                   >
                     {defaultWebSearch ? "ON" : "OFF"}
                   </button>
+                </div>
+              </div>
+
+              <div className="settings-section" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-light)' }}>
+                <label className="form-label">Gmail Integration</label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-deep)', padding: '0.75rem', borderRadius: '0.75rem', border: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ width: '2.5rem', height: '2.5rem', background: gmailAccessToken ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: gmailAccessToken ? '#22c55e' : '#ef4444' }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1.25rem', height: '1.25rem', margin: 'auto'}}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{gmailAccessToken ? "Connected" : "Disconnected"}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{gmailAccessToken ? "AI can search your emails" : "Sync emails with MIMI"}</span>
+                    </div>
+                  </div>
+                  
+                  {gmailAccessToken ? (
+                    <button 
+                      onClick={() => {
+                        setGmailAccessToken(null);
+                        setGmailRefreshToken(null);
+                        setGmailTokenExpiry(null);
+                      }}
+                      style={{ padding: '0.4rem 0.75rem', borderRadius: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', fontSize: '0.75rem', fontWeight: 600 }}
+                    >
+                      Disconnect
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => {
+                        const width = 500, height = 600;
+                        const left = (window.innerWidth - width) / 2;
+                        const top = (window.innerHeight - height) / 2;
+                        window.open('/api/gmail/auth', 'google-auth', `width=${width},height=${height},top=${top},left=${left}`);
+                      }}
+                      style={{ padding: '0.4rem 0.75rem', borderRadius: '0.5rem', background: 'var(--accent-base)', color: 'white', fontSize: '0.75rem', fontWeight: 600 }}
+                    >
+                      Connect Gmail
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
