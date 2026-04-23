@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import { extractTextFromFile, formatDocumentForPrompt, getFileCategory, FileCategory } from "@/lib/fileParser";
 
 // ...
 
@@ -128,6 +129,64 @@ const CustomModelSelect = ({ availableModels, selectedProviderId, selectedModelI
   );
 };
 
+// ── DocChip ──────────────────────────────────────────────────────────────────
+// Renders a coloured chip for non-image document attachments
+
+const DOC_COLORS: Record<string, { bg: string; border: string; label: string; icon: React.ReactNode }> = {
+  pdf: {
+    bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.35)', label: 'PDF',
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:'18px',height:'18px',color:'#ef4444'}}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+  },
+  word: {
+    bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.35)', label: 'DOCX',
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:'18px',height:'18px',color:'#3b82f6'}}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+  },
+  excel: {
+    bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.35)', label: 'XLSX',
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:'18px',height:'18px',color:'#22c55e'}}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><rect x="8" y="13" width="8" height="6" rx="1"/><line x1="10" y1="13" x2="10" y2="19"/><line x1="14" y1="13" x2="14" y2="19"/></svg>
+  },
+  text: {
+    bg: 'rgba(156,163,175,0.12)', border: 'rgba(156,163,175,0.35)', label: 'TXT',
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:'18px',height:'18px',color:'#9ca3af'}}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+  },
+};
+
+function formatBytes(bytes?: number) {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function getDocKey(type: string, name: string): keyof typeof DOC_COLORS {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (type === 'application/pdf' || ext === 'pdf') return 'pdf';
+  if (ext === 'docx' || ext === 'doc') return 'word';
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') return 'excel';
+  return 'text';
+}
+
+const DocChip = ({ name, type, fileSize, compact }: { name: string; type: string; fileSize?: number; compact?: boolean }) => {
+  const key = getDocKey(type, name);
+  const config = DOC_COLORS[key] || DOC_COLORS.text;
+  const shortName = name.length > 24 ? name.slice(0, 21) + '…' : name;
+  return (
+    <div
+      className="doc-chip"
+      style={{ background: config.bg, borderColor: config.border }}
+      title={name}
+    >
+      {config.icon}
+      <div className="doc-chip-info">
+        <span className="doc-chip-name">{compact ? shortName : name}</span>
+        {!compact && fileSize && <span className="doc-chip-size">{formatBytes(fileSize)}</span>}
+        <span className="doc-chip-label" style={{ color: Object.values(config.border.match(/\d+,\d+,\d+/) || [''])[0] ? undefined : '#9ca3af' }}>{config.label}</span>
+      </div>
+      {!compact && fileSize && <span className="doc-chip-size-inline">{formatBytes(fileSize)}</span>}
+    </div>
+  );
+};
+
 export default function Home() {
   // Contexts
   const { 
@@ -148,7 +207,15 @@ export default function Home() {
   const [chatSearch, setChatSearch] = useState("");
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [pendingAttachments, setPendingAttachments] = useState<{dataUrl: string, name: string, type: string}[]>([]);
+  const [isParsing, setIsParsing] = useState(false); // true while extracting doc text
+  const [pendingAttachments, setPendingAttachments] = useState<{
+    dataUrl?: string;
+    name: string;
+    type: string;
+    extractedText?: string;
+    fileSize?: number;
+    category?: FileCategory;
+  }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Available models format: { id, name, providerId, providerName }
@@ -363,14 +430,31 @@ export default function Home() {
 
     let formattedMessages = [...messages, userMessage].map(({ role, content, attachments }) => {
       if (attachments && attachments.length > 0) {
-        const multimodalContent = [
-          { type: "text", text: content },
-          ...attachments.map(att => ({
-            type: "image_url",
-            image_url: { url: att.dataUrl }
-          }))
-        ];
-        return { role, content: multimodalContent as any };
+        const images = attachments.filter(a => a.dataUrl && !a.extractedText);
+        const docs = attachments.filter(a => a.extractedText);
+
+        // Prepend extracted document text to message content
+        let enrichedContent = content;
+        if (docs.length > 0) {
+          const docBlocks = docs
+            .map(d => formatDocumentForPrompt(d.name, d.extractedText!))
+            .join("\n\n");
+          enrichedContent = `${docBlocks}\n\n${content}`;
+        }
+
+        if (images.length > 0) {
+          // Multimodal: text + image_url parts
+          const multimodalContent = [
+            { type: "text", text: enrichedContent },
+            ...images.map(att => ({
+              type: "image_url",
+              image_url: { url: att.dataUrl }
+            }))
+          ];
+          return { role, content: multimodalContent as any };
+        }
+
+        return { role, content: enrichedContent };
       }
       return { role, content };
     });
@@ -479,15 +563,38 @@ export default function Home() {
   };
 
   const addFilesToAttachments = (files: FileList | File[]) => {
-    Array.from(files).forEach(file => {
-      if (!file.type.startsWith("image/")) return; // Skip non-images
-      
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        setPendingAttachments(prev => [...prev, { dataUrl, name: file.name || "pasted_image", type: file.type }]);
-      };
-      reader.readAsDataURL(file);
+    Array.from(files).forEach(async (file) => {
+      const category = getFileCategory(file);
+      if (category === "unknown") return; // ignore unsupported types
+
+      if (category === "image") {
+        // Images: store as dataUrl for multimodal API
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const dataUrl = event.target?.result as string;
+          setPendingAttachments(prev => [
+            ...prev,
+            { dataUrl, name: file.name || "pasted_image", type: file.type, fileSize: file.size, category }
+          ]);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        // Documents: extract text client-side
+        setIsParsing(true);
+        try {
+          const extractedText = await extractTextFromFile(file);
+          setPendingAttachments(prev => [
+            ...prev,
+            { name: file.name, type: file.type, extractedText, fileSize: file.size, category }
+          ]);
+        } catch (err) {
+          console.warn("Failed to parse file:", err);
+          const errMsg = err instanceof Error ? err.message : String(err);
+          alert(`Could not read "${file.name}".\n\nDetails: ${errMsg}`);
+        } finally {
+          setIsParsing(false);
+        }
+      }
     });
   };
 
@@ -726,13 +833,19 @@ export default function Home() {
                     {msg.attachments && msg.attachments.length > 0 && (
                       <div className="message-attachments-display">
                         {msg.attachments.map((att, i) => (
-                          <img key={i} src={att.dataUrl} alt={att.name} className="message-attachment-img" />
+                          att.dataUrl
+                            ? <img key={i} src={att.dataUrl} alt={att.name} className="message-attachment-img" />
+                            : <DocChip key={i} name={att.name} type={att.type} fileSize={att.fileSize} />
                         ))}
                       </div>
                     )}
                     
                     {msg.role === 'assistant' && !msg.content ? (
-                      <span style={{opacity: 0.5}}>...</span>
+                      <span style={{display:'flex', gap:'0.4rem', alignItems:'center', padding:'0.1rem 0'}}>
+                        <span className="typing-dot"></span>
+                        <span className="typing-dot"></span>
+                        <span className="typing-dot"></span>
+                      </span>
                     ) : (
                       <div className="markdown-content">
                         <ReactMarkdown 
@@ -764,11 +877,24 @@ export default function Home() {
         </div>
 
         <div className="input-area-wrapper">
-          {pendingAttachments.length > 0 && (
+          {(pendingAttachments.length > 0 || isParsing) && (
             <div className="attachment-preview-tray">
+              {isParsing && (
+                <div className="doc-chip parsing">
+                  <span style={{display:'flex',gap:'0.3rem',alignItems:'center'}}>
+                    <span className="typing-dot" style={{width:'6px',height:'6px'}}></span>
+                    <span className="typing-dot" style={{width:'6px',height:'6px'}}></span>
+                    <span className="typing-dot" style={{width:'6px',height:'6px'}}></span>
+                  </span>
+                  <span>Parsing…</span>
+                </div>
+              )}
               {pendingAttachments.map((att, i) => (
-                <div key={i} className="attachment-preview-item">
-                  <img src={att.dataUrl} alt={att.name} className="attachment-thumbnail" />
+                <div key={i} className={`attachment-preview-item ${att.category !== 'image' ? 'doc-preview-item' : ''}`}>
+                  {att.dataUrl
+                    ? <img src={att.dataUrl} alt={att.name} className="attachment-thumbnail" />
+                    : <DocChip name={att.name} type={att.type} fileSize={att.fileSize} compact />
+                  }
                   <button onClick={() => setPendingAttachments(prev => prev.filter((_, idx) => idx !== i))} className="attachment-remove-btn" title="Remove attachment">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
@@ -782,7 +908,7 @@ export default function Home() {
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
               </svg>
             </button>
-            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" multiple hidden />
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md" multiple hidden />
             
             <textarea 
               value={input}

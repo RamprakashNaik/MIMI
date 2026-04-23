@@ -7,7 +7,13 @@ export type Message = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
-  attachments?: { dataUrl: string; name: string; type: string }[];
+  attachments?: {
+    dataUrl?: string;       // images only
+    name: string;
+    type: string;
+    extractedText?: string; // documents: PDF / Word / Excel / text
+    fileSize?: number;      // bytes
+  }[];
 };
 
 export type Chat = {
