@@ -41,6 +41,7 @@ interface ChatContextType {
   addMessage: (chatId: string, message: Message) => void;
   updateMessage: (chatId: string, messageId: string, content: string) => void;
   deleteChat: (chatId: string) => void;
+  deleteMessage: (chatId: string, messageId: string) => void;
   renameChat: (chatId: string, title: string) => void;
   togglePinChat: (chatId: string) => void;
   updateChatModel: (chatId: string, providerId: string, modelId: string) => void;
@@ -158,6 +159,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const deleteMessage = (chatId: string, messageId: string) => {
+    setChats((prev) => prev.map((chat) => {
+      if (chat.id === chatId) {
+        return {
+          ...chat,
+          messages: chat.messages.filter((m) => m.id !== messageId),
+          updatedAt: Date.now()
+        };
+      }
+      return chat;
+    }));
+  };
+
   const renameChat = (chatId: string, title: string) => {
     setChats((prev) => prev.map((chat) => 
       chat.id === chatId ? { ...chat, title, updatedAt: Date.now() } : chat
@@ -183,9 +197,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const contextValue = React.useMemo(() => ({
     chats, activeChatId, setActiveChatId,
-    createNewChat, addMessage, updateMessage,
-    deleteChat, renameChat, togglePinChat, updateChatModel,
-    deleteAllChats
+    createNewChat, addMessage, updateMessage, deleteChat, deleteMessage, renameChat, 
+    togglePinChat, updateChatModel, deleteAllChats 
   }), [chats, activeChatId]);
 
   return (

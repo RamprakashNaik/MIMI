@@ -447,7 +447,7 @@ export default function Home() {
     gmailRefreshToken, setGmailRefreshToken,
     gmailTokenExpiry, setGmailTokenExpiry
   } = useSettings();
-  const { chats, activeChatId, setActiveChatId, createNewChat, addMessage, updateMessage, deleteChat, renameChat, togglePinChat, updateChatModel, deleteAllChats } = useChat();
+  const { chats, activeChatId, setActiveChatId, createNewChat, addMessage, updateMessage, deleteChat, deleteMessage, renameChat, togglePinChat, updateChatModel, deleteAllChats } = useChat();
   const { 
     activeArtifact, setActiveArtifact, 
     isPanelOpen, setIsPanelOpen, 
@@ -780,7 +780,7 @@ export default function Home() {
     }
   };
 
-  const sendMessage = async (overrideInput?: string) => {
+  const sendMessage = async (overrideInput?: string, isRegenerating: boolean = false) => {
     const textToSend = overrideInput !== undefined ? overrideInput : input;
     if (isTyping || !textToSend.trim() || !selectedModelId || !selectedProviderId) {
       if (!selectedModelId || !selectedProviderId) setShowSettings(true);
@@ -814,13 +814,15 @@ export default function Home() {
     // Check if this is the first message in the chat to trigger AI auto-title
     const isFirstMessage = !activeChatId || (activeChat && activeChat.messages.length === 0);
 
-    addMessage(targetChatId, userMessage);
-    if (overrideInput === undefined) {
-      setInput("");
+    if (!isRegenerating) {
+      addMessage(targetChatId, userMessage);
+      if (overrideInput === undefined) {
+        setInput("");
+      }
     }
     setIsTyping(true);
 
-    if (isFirstMessage) {
+    if (isFirstMessage && !isRegenerating) {
       generateTitleForChat(targetChatId, textToSend, activeProvider, selectedModelId);
     }
 
@@ -873,7 +875,7 @@ export default function Home() {
       }
     }
 
-    let formattedMessages = [...messages, userMessage].map(({ role, content, attachments }) => {
+    let formattedMessages = (isRegenerating ? messages : [...messages, userMessage]).map(({ role, content, attachments }) => {
       if (attachments && attachments.length > 0) {
         const images = attachments.filter(a => a.dataUrl && !a.extractedText);
         const docs = attachments.filter(a => a.extractedText);
@@ -1020,6 +1022,19 @@ Format:
       abortControllerRef.current.abort();
     }
     setIsTyping(false);
+  };
+
+  const regenerateMessage = (assistantMsgId: string) => {
+    if (!activeChat || isTyping) return;
+    
+    const msgIndex = activeChat.messages.findIndex(m => m.id === assistantMsgId);
+    if (msgIndex === -1) return;
+    
+    const userMsg = activeChat.messages[msgIndex - 1];
+    if (!userMsg || userMsg.role !== 'user') return;
+    
+    deleteMessage(activeChat.id, assistantMsgId);
+    sendMessage(userMsg.content, true);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1325,19 +1340,51 @@ Format:
                             <span className="typing-dot"></span>
                           </span>
                         ) : (
-                          <div className="markdown-content">
-                            <ReactMarkdown 
-                              remarkPlugins={[remarkGfm, remarkMath]}
-                              rehypePlugins={[rehypeKatex, rehypeRaw]}
-                              components={{ 
-                                code: CodeBlock,
-                                artifact: ArtifactBox
-                              } as any}
+                          <>
+                            <div className="markdown-content">
+                              <ReactMarkdown 
+                                remarkPlugins={[remarkGfm, remarkMath]}
+                                rehypePlugins={[rehypeKatex, rehypeRaw]}
+                                components={{ 
+                                  code: CodeBlock,
+                                  artifact: ArtifactBox
+                                } as any}
+                              >
+                                {msg.content}
+                              </ReactMarkdown>
+                            </div>
+                            {msg.role === 'assistant' && msg.content && (
+                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', paddingLeft: '0.2rem' }}>
+                            <button 
+                              onClick={() => regenerateMessage(msg.id)}
+                              className="action-icon-btn"
+                              title="Regenerate response"
+                              style={{ 
+                                background: 'transparent', border: 'none', padding: '0.25rem', borderRadius: '0.4rem', 
+                                cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center',
+                                transition: 'all 0.2s'
+                              }}
                             >
-                              {msg.content}
-                            </ReactMarkdown>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '14px', height: '14px'}}><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                            </button>
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(msg.content);
+                              }}
+                              className="action-icon-btn"
+                              title="Copy response"
+                              style={{ 
+                                background: 'transparent', border: 'none', padding: '0.25rem', borderRadius: '0.4rem', 
+                                cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '14px', height: '14px'}}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            </button>
                           </div>
                         )}
+                      </>
+                    )}
                       </div>
                     </div>
                   ))}
