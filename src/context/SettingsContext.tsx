@@ -9,9 +9,21 @@ export interface Provider {
   apiKey: string;
 }
 
+export interface Pico {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  firstMessage?: string;
+  createdAt: number;
+}
+
 interface SettingsContextType {
   providers: Provider[];
   setProviders: React.Dispatch<React.SetStateAction<Provider[]>>;
+  picos: Pico[];
+  setPicos: React.Dispatch<React.SetStateAction<Pico[]>>;
+  selectedPicoId: string | null;
+  setSelectedPicoId: (id: string | null) => void;
   selectedModelId: string | null;
   setSelectedModelId: (modelId: string | null) => void;
   selectedProviderId: string | null;
@@ -22,6 +34,9 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [picos, setPicos] = useState<Pico[]>([]);
+  const [selectedPicoId, setSelectedPicoId] = useState<string | null>(null);
+  
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -29,15 +44,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // Load from LocalStorage on mount
   useEffect(() => {
     const storedProviders = localStorage.getItem("mimi_providers");
+    const storedPicos = localStorage.getItem("mimi_picos");
+    const storedPicoId = localStorage.getItem("mimi_selectedPicoId");
     const storedModel = localStorage.getItem("mimi_selectedModelId");
     const storedProvider = localStorage.getItem("mimi_selectedProviderId");
 
     if (storedProviders) {
-      try {
-        setProviders(JSON.parse(storedProviders));
-      } catch (e) {
-        console.error("Failed to parse providers from localStorage");
-      }
+      try { setProviders(JSON.parse(storedProviders)); } catch (e) {}
     } else {
       // Auto-Migration from Legacy Single API logic
       const legacyApiKey = localStorage.getItem("mimi_apiKey");
@@ -68,6 +81,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    if (storedPicos) try { setPicos(JSON.parse(storedPicos)); } catch(e) {}
+    if (storedPicoId) setSelectedPicoId(storedPicoId);
     if (storedModel) setSelectedModelId(storedModel);
     if (storedProvider) setSelectedProviderId(storedProvider);
     setIsLoaded(true);
@@ -77,16 +92,23 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isLoaded) return;
     localStorage.setItem("mimi_providers", JSON.stringify(providers));
+    localStorage.setItem("mimi_picos", JSON.stringify(picos));
+    
+    if (selectedPicoId) localStorage.setItem("mimi_selectedPicoId", selectedPicoId);
+    else localStorage.removeItem("mimi_selectedPicoId");
+
     if (selectedModelId) localStorage.setItem("mimi_selectedModelId", selectedModelId);
     else localStorage.removeItem("mimi_selectedModelId");
     
     if (selectedProviderId) localStorage.setItem("mimi_selectedProviderId", selectedProviderId);
     else localStorage.removeItem("mimi_selectedProviderId");
-  }, [providers, selectedModelId, selectedProviderId, isLoaded]);
+  }, [providers, picos, selectedPicoId, selectedModelId, selectedProviderId, isLoaded]);
 
   return (
     <SettingsContext.Provider value={{
       providers, setProviders,
+      picos, setPicos,
+      selectedPicoId, setSelectedPicoId,
       selectedModelId, setSelectedModelId,
       selectedProviderId, setSelectedProviderId
     }}>

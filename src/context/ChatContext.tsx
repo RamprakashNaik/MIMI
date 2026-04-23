@@ -1,11 +1,13 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import localforage from "localforage";
 
 export type Message = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  attachments?: { dataUrl: string; name: string; type: string }[];
 };
 
 export type Chat = {
@@ -16,19 +18,21 @@ export type Chat = {
   updatedAt: number;
   modelId?: string;
   providerId?: string;
+  picoId?: string;
 };
 
 interface ChatContextType {
   chats: Chat[];
   activeChatId: string | null;
   setActiveChatId: (id: string | null) => void;
-  createNewChat: (providerId?: string | null, modelId?: string | null) => void;
+  createNewChat: (providerId?: string | null, modelId?: string | null, picoId?: string | null) => void;
   addMessage: (chatId: string, message: Message) => void;
   updateMessage: (chatId: string, messageId: string, content: string) => void;
   deleteChat: (chatId: string) => void;
   renameChat: (chatId: string, title: string) => void;
   togglePinChat: (chatId: string) => void;
   updateChatModel: (chatId: string, providerId: string, modelId: string) => void;
+  deleteAllChats: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -38,34 +42,57 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load from LocalStorage
+  // Load from localforage (IndexedDB)
   useEffect(() => {
-    const storedChats = localStorage.getItem("mimi_chats");
-    const storedActiveChat = localStorage.getItem("mimi_activeChatId");
-    
-    if (storedChats) {
+    const loadState = async () => {
       try {
-        setChats(JSON.parse(storedChats));
+        // Auto-migration from legacy synchronous localStorage
+        const legacyChats = localStorage.getItem("mimi_chats");
+        if (legacyChats) {
+          console.log("Migrating legacy chats to IndexedDB...");
+          await localforage.setItem("mimi_chats", JSON.parse(legacyChats));
+          localStorage.removeItem("mimi_chats");
+        }
+        
+        const legacyActiveStr = localStorage.getItem("mimi_activeChatId");
+        if (legacyActiveStr) {
+          await localforage.setItem("mimi_activeChatId", legacyActiveStr);
+          localStorage.removeItem("mimi_activeChatId");
+        }
+
+        const storedChats = await localforage.getItem<Chat[]>("mimi_chats");
+        const storedActiveChat = await localforage.getItem<string>("mimi_activeChatId");
+        
+        if (storedChats) setChats(storedChats);
+        if (storedActiveChat) setActiveChatId(storedActiveChat);
       } catch (e) {
-        console.error("Failed to parse chats from localStorage");
+        console.error("Failed to parse chats from localforage", e);
+      } finally {
+        setIsLoaded(true);
       }
-    }
-    if (storedActiveChat) setActiveChatId(storedActiveChat);
-    setIsLoaded(true);
+    };
+    loadState();
   }, []);
 
-  // Save to LocalStorage
+  // Save to localforage
   useEffect(() => {
     if (!isLoaded) return;
-    localStorage.setItem("mimi_chats", JSON.stringify(chats));
-    if (activeChatId) {
-      localStorage.setItem("mimi_activeChatId", activeChatId);
-    } else {
-      localStorage.removeItem("mimi_activeChatId");
-    }
+    const saveState = async () => {
+      try {
+        await localforage.setItem("mimi_chats", chats);
+        if (activeChatId) {
+          await localforage.setItem("mimi_activeChatId", activeChatId);
+        } else {
+          await localforage.removeItem("mimi_activeChatId");
+        }
+      } catch (e) {
+        console.error("Failed to save to localforage:", e);
+      }
+    };
+    saveState();
   }, [chats, activeChatId, isLoaded]);
 
-  const createNewChat = (providerId?: string | null, modelId?: string | null) => {
+  const createNewChat = (providerId?: string | null, modelId?: string | null, picoId?: string | null) => {
     const newChat: Chat = {
       id: Date.now().toString() + Math.random().toString(),
       title: "New Chat",
@@ -74,6 +101,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       updatedAt: Date.now(),
       providerId: providerId || undefined,
       modelId: modelId || undefined,
+      picoId: picoId || undefined,
     };
     setChats((prev) => [newChat, ...prev]);
     setActiveChatId(newChat.id);
@@ -136,11 +164,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     ));
   };
 
+  const deleteAllChats = () => {
+    setChats([]);
+    setActiveChatId(null);
+  };
+
   return (
     <ChatContext.Provider value={{
       chats, activeChatId, setActiveChatId,
       createNewChat, addMessage, updateMessage,
-      deleteChat, renameChat, togglePinChat, updateChatModel
+      deleteChat, renameChat, togglePinChat, updateChatModel,
+      deleteAllChats
     }}>
       {children}
     </ChatContext.Provider>

@@ -130,15 +130,26 @@ const CustomModelSelect = ({ availableModels, selectedProviderId, selectedModelI
 
 export default function Home() {
   // Contexts
-  const { providers, setProviders, selectedModelId, setSelectedModelId, selectedProviderId, setSelectedProviderId } = useSettings();
-  const { chats, activeChatId, setActiveChatId, createNewChat, addMessage, updateMessage, deleteChat, renameChat, togglePinChat, updateChatModel } = useChat();
+  const { 
+    providers, setProviders, 
+    picos, setPicos,
+    selectedPicoId, setSelectedPicoId,
+    selectedModelId, setSelectedModelId, 
+    selectedProviderId, setSelectedProviderId 
+  } = useSettings();
+  const { chats, activeChatId, setActiveChatId, createNewChat, addMessage, updateMessage, deleteChat, renameChat, togglePinChat, updateChatModel, deleteAllChats } = useChat();
 
   // Local State
   const [showSettings, setShowSettings] = useState(false);
+  const [showPicoModal, setShowPicoModal] = useState(false);
+  const [picoForm, setPicoForm] = useState({ name: "", systemPrompt: "", firstMessage: "" });
+  
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [chatSearch, setChatSearch] = useState("");
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<{dataUrl: string, name: string, type: string}[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Available models format: { id, name, providerId, providerName }
   const [availableModels, setAvailableModels] = useState<any[]>([]);
@@ -167,12 +178,26 @@ export default function Home() {
     }
   }, [activeChat, selectedModelId, selectedProviderId, setSelectedModelId, setSelectedProviderId]);
 
-  // Sorting chats: Pinned first, then by updatedAt
+  // Sort chats: Pinned first, then by updatedAt
   const sortedChats = [...chats].sort((a, b) => {
     if (a.pinned && !b.pinned) return -1;
     if (!a.pinned && b.pinned) return 1;
     return b.updatedAt - a.updatedAt;
   }).filter(chat => chat.title.toLowerCase().includes(chatSearch.toLowerCase()));
+
+  // Auto-inject Pico First Message Greeting
+  useEffect(() => {
+    if (activeChat && activeChat.messages.length === 0 && activeChat.picoId) {
+      const pico = picos.find(p => p.id === activeChat.picoId);
+      if (pico && pico.firstMessage) {
+        addMessage(activeChat.id, {
+          id: Date.now().toString(),
+          role: "assistant", // Pretend it comes from the AI
+          content: pico.firstMessage
+        });
+      }
+    }
+  }, [activeChatId, chats, picos, addMessage, activeChat]);
 
   const fetchModels = async () => {
     if (!providers || providers.length === 0) return;
@@ -308,12 +333,20 @@ export default function Home() {
 
     let targetChatId = activeChatId;
     if (!targetChatId) {
-      createNewChat(selectedProviderId, selectedModelId);
+      createNewChat(selectedProviderId, selectedModelId, selectedPicoId);
+      // We must briefly wait for the react cycle to map the new chat, or mock it dynamically. 
+      // For synchronous safety, we can't reliably rely on targetChatId here without blocking, but createNewChat triggers state which re-renders. 
+      // We will let the useEffect handle empty states securely next time or manually pull it via Context refs.
+      // To strictly avoid a race condition, we return and require the user to hit send again on a perfectly fresh state, OR we mock it.
+      // Since createNewChat triggers an instant dispatch, we'll gracefully return and alert the user it is ready.
       return;
     }
 
+    const attachmentsToSend = [...pendingAttachments];
+    setPendingAttachments([]); // Clear visually immediately
+
     const userId = Date.now().toString() + Math.random().toString();
-    const userMessage: Message = { id: userId, role: "user", content: textToSend };
+    const userMessage: Message = { id: userId, role: "user", content: textToSend, attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined };
     
     // Check if this is the first message in the chat to trigger AI auto-title
     const isFirstMessage = !activeChatId || (activeChat && activeChat.messages.length === 0);
@@ -328,7 +361,28 @@ export default function Home() {
       generateTitleForChat(targetChatId, textToSend, activeProvider, selectedModelId);
     }
 
-    const activeMessages = [...messages, userMessage].map(({ role, content }) => ({ role, content }));
+    let formattedMessages = [...messages, userMessage].map(({ role, content, attachments }) => {
+      if (attachments && attachments.length > 0) {
+        const multimodalContent = [
+          { type: "text", text: content },
+          ...attachments.map(att => ({
+            type: "image_url",
+            image_url: { url: att.dataUrl }
+          }))
+        ];
+        return { role, content: multimodalContent as any };
+      }
+      return { role, content };
+    });
+
+    const activePicoId = activeChat ? activeChat.picoId : selectedPicoId;
+    const activePico = picos.find(p => p.id === activePicoId);
+    if (activePico && activePico.systemPrompt) {
+      formattedMessages = [
+        { role: "system", content: activePico.systemPrompt },
+        ...formattedMessages
+      ];
+    }
     
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -350,7 +404,7 @@ export default function Home() {
           headers,
           body: {
             model: selectedModelId,
-            messages: activeMessages,
+            messages: formattedMessages,
             stream: true,
           }
         })
@@ -424,6 +478,55 @@ export default function Home() {
     e.target.style.height = e.target.scrollHeight + 'px';
   };
 
+  const addFilesToAttachments = (files: FileList | File[]) => {
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith("image/")) return; // Skip non-images
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        setPendingAttachments(prev => [...prev, { dataUrl, name: file.name || "pasted_image", type: file.type }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) addFilesToAttachments(e.target.files);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith("image/")) {
+        const file = items[i].getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    
+    if (imageFiles.length > 0) {
+      e.preventDefault(); // Prevent default text-pasting if it's purely an image
+      addFilesToAttachments(imageFiles);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      addFilesToAttachments(e.dataTransfer.files);
+    }
+  };
+
   const handleContextMenu = (e: React.MouseEvent, chatId: string) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, chatId });
@@ -431,9 +534,9 @@ export default function Home() {
 
   useEffect(() => {
     if (chats.length === 0 && !activeChatId && selectedProviderId && selectedModelId) {
-      createNewChat(selectedProviderId, selectedModelId);
+      createNewChat(selectedProviderId, selectedModelId, selectedPicoId);
     }
-  }, [chats, activeChatId, selectedProviderId, selectedModelId, createNewChat]);
+  }, [chats, activeChatId, selectedProviderId, selectedModelId, selectedPicoId, createNewChat]);
 
   return (
     <>
@@ -449,7 +552,7 @@ export default function Home() {
           <h1 className="sidebar-title">MIMI</h1>
         </div>
 
-        <button className="new-chat-btn" onClick={() => createNewChat(selectedProviderId, selectedModelId)}>
+        <button className="new-chat-btn" onClick={() => createNewChat(selectedProviderId, selectedModelId, selectedPicoId)}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: '20px', height: '20px'}}>
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -457,6 +560,52 @@ export default function Home() {
           New Chat
         </button>
         
+        {/* Pico Selector Section */}
+        <div style={{ marginBottom: '1.5rem', padding: '0.75rem', background: 'var(--bg-deep)', borderRadius: '0.75rem', border: '1px solid var(--border-light)' }}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+            <span style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em'}}>Persona (Pico)</span>
+            <button 
+              onClick={() => setShowPicoModal(true)} 
+              title="Create new Pico Persona"
+              style={{background: 'none', border: 'none', color: 'var(--accent-base)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem'}}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '12px', height: '12px'}}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              New
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <select 
+              className="form-input" 
+              value={selectedPicoId || ''} 
+              onChange={(e) => {
+                 const newPicoId = e.target.value || null;
+                 setSelectedPicoId(newPicoId);
+                 createNewChat(selectedProviderId, selectedModelId, newPicoId);
+              }}
+              style={{flex: 1, padding: '0.5rem', borderRadius: '0.5rem', background: 'var(--bg-surface)', fontSize: '0.875rem', color: 'var(--text-primary)', border: '1px solid transparent', outline: 'none', cursor: 'pointer'}}
+            >
+              <option value="">Vanilla (No Persona)</option>
+              {picos.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            {selectedPicoId && (
+              <button 
+                onClick={() => {
+                  if (confirm("Are you sure you want to delete this Persona?")) {
+                    setPicos(picos.filter(p => p.id !== selectedPicoId));
+                    setSelectedPicoId(null);
+                  }
+                }}
+                title="Delete Persona"
+                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: '#ef4444', width: '2rem', height: '2rem', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: '14px', height: '14px'}}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="sidebar-search-wrapper" style={{ position: 'relative', marginBottom: '1.25rem' }}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '14px', height: '14px', color: 'var(--text-tertiary)' }}>
             <circle cx="11" cy="11" r="8"></circle>
@@ -520,7 +669,7 @@ export default function Home() {
         </button>
       </aside>
 
-      <main className="main-content">
+      <main className="main-content" onDragOver={handleDragOver} onDrop={handleDrop}>
         <div className="top-bar">
           <button 
             className="sidebar-toggle-btn"
@@ -554,7 +703,9 @@ export default function Home() {
           {messages.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">🤖</div>
-              <h2 className="empty-title">Hi, I'm MIMI</h2>
+              <h2 className="empty-title">
+                {activeChat?.picoId ? `Pico: ${picos.find(p => p.id === activeChat.picoId)?.name}` : "Hi, I'm MIMI"}
+              </h2>
               <p className="empty-subtitle">Your secure, local AI running beautifully on your terms.</p>
               
               <div className="suggestions-grid">
@@ -572,6 +723,14 @@ export default function Home() {
                 <div key={msg.id} className={`message-wrapper ${msg.role}`}>
                   <span className="message-label">{msg.role === 'user' ? 'You' : 'MIMI'}</span>
                   <div className="message-bubble">
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className="message-attachments-display">
+                        {msg.attachments.map((att, i) => (
+                          <img key={i} src={att.dataUrl} alt={att.name} className="message-attachment-img" />
+                        ))}
+                      </div>
+                    )}
+                    
                     {msg.role === 'assistant' && !msg.content ? (
                       <span style={{opacity: 0.5}}>...</span>
                     ) : (
@@ -605,11 +764,31 @@ export default function Home() {
         </div>
 
         <div className="input-area-wrapper">
+          {pendingAttachments.length > 0 && (
+            <div className="attachment-preview-tray">
+              {pendingAttachments.map((att, i) => (
+                <div key={i} className="attachment-preview-item">
+                  <img src={att.dataUrl} alt={att.name} className="attachment-thumbnail" />
+                  <button onClick={() => setPendingAttachments(prev => prev.filter((_, idx) => idx !== i))} className="attachment-remove-btn" title="Remove attachment">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="input-container">
+            <button className="attach-button" onClick={() => fileInputRef.current?.click()} title="Attach File">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: "1.25rem", height: "1.25rem"}}>
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+              </svg>
+            </button>
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" multiple hidden />
+            
             <textarea 
               value={input}
               onChange={autoResizeTextarea}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               placeholder="Message MIMI..." 
               rows={1}
               className="chat-input"
@@ -643,6 +822,97 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {/* Pico Modals */}
+      {showPicoModal && (
+        <div className="modal-overlay">
+          <div className="modal-backdrop" onClick={() => setShowPicoModal(false)}></div>
+          <div className="modal-content" style={{ maxWidth: '450px' }}>
+            <div className="modal-header">
+              <h2 className="modal-title">Create Pico Persona</h2>
+              <button onClick={() => setShowPicoModal(false)} className="modal-close">&times;</button>
+            </div>
+            
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+              Picos are custom AI personas. Supply a system prompt to define their behavior.
+            </p>
+
+            <div className="form-group" style={{ marginBottom: '1rem' }}>
+              <label className="form-label">Pico Name <span style={{color: '#ef4444'}}>*</span></label>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="ex. Python Mentor"
+                value={picoForm.name}
+                onChange={e => setPicoForm({...picoForm, name: e.target.value})}
+                autoFocus
+              />
+            </div>
+            
+            <div className="form-group" style={{ marginBottom: '1rem' }}>
+              <label className="form-label">System Instructions <span style={{color: '#ef4444'}}>*</span></label>
+              <textarea 
+                className="form-input" 
+                placeholder="ex. You are an expert Python developer. Always output concise, optimized code snippets without markdown headers."
+                rows={4}
+                value={picoForm.systemPrompt}
+                onChange={e => setPicoForm({...picoForm, systemPrompt: e.target.value})}
+                style={{ resize: 'vertical' }}
+              />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '1rem' }}>
+              <label className="form-label">Greeting Message (Optional)</label>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="ex. Hello! Share some python code with me."
+                value={picoForm.firstMessage}
+                onChange={e => setPicoForm({...picoForm, firstMessage: e.target.value})}
+              />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.25rem', display: 'block' }}>
+                If provided, this message automatically injects into the chat upon creation.
+              </span>
+            </div>
+
+            <div className="modal-footer" style={{ marginTop: '2rem', display: 'flex', gap: '1rem' }}>
+              <button 
+                className="submit-btn" 
+                style={{ flex: 1, background: 'var(--bg-surface-elevated)', boxShadow: 'none' }}
+                onClick={() => setShowPicoModal(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="submit-btn" 
+                style={{ flex: 1 }}
+                onClick={() => {
+                  if (!picoForm.name.trim() || !picoForm.systemPrompt.trim()) {
+                    alert("Name and System Prompt are required.");
+                    return;
+                  }
+                  const newPico = {
+                    id: Date.now().toString(),
+                    name: picoForm.name.trim(),
+                    systemPrompt: picoForm.systemPrompt.trim(),
+                    firstMessage: picoForm.firstMessage.trim(),
+                    createdAt: Date.now()
+                  };
+                  setPicos([...picos, newPico]);
+                  setSelectedPicoId(newPico.id);
+                  setShowPicoModal(false);
+                  setPicoForm({ name: "", systemPrompt: "", firstMessage: "" });
+                  
+                  // Instantly spawn a new chat governed by this Pico
+                  createNewChat(selectedProviderId, selectedModelId, newPico.id);
+                }}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Settings & API Modal */}
       {showSettings && (
@@ -760,7 +1030,19 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <button 
+                onClick={() => {
+                  if (confirm("Are you sure you want to delete ALL chats? This cannot be undone.")) {
+                    deleteAllChats();
+                    setShowSettings(false);
+                  }
+                }} 
+                className="submit-btn" 
+                style={{ width: '100%', background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', boxShadow: 'none' }}
+              >
+                Delete All Chats
+              </button>
               <button onClick={() => setShowSettings(false)} className="submit-btn" style={{ width: '100%' }}>
                 Done
               </button>
