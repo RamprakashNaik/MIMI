@@ -467,6 +467,7 @@ export default function Home() {
   const [deletePicoId, setDeletePicoId] = useState<string | null>(null);
   const [showPicoModal, setShowPicoModal] = useState(false);
   const [picoForm, setPicoForm] = useState({ name: "", systemPrompt: "", firstMessage: "" });
+  const [settingsTab, setSettingsTab] = useState<'ai' | 'integrations' | 'advanced'>('ai');
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [chatSearch, setChatSearch] = useState("");
@@ -1561,193 +1562,256 @@ Format:
         <div className="modal-overlay">
           <div className="modal-backdrop" onClick={() => setShowSettings(false)}></div>
           
-          <div className="modal-content" style={{ maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div className="modal-header">
-              <h2 className="modal-title">Settings & API</h2>
+          <div className="modal-content" style={{ maxWidth: '800px', width: '95%', height: '80vh', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {/* Modal Header */}
+            <div className="modal-header" style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-light)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: '2rem', height: '2rem', background: 'var(--accent-glow)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-base)' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1.1rem', height: '1.1rem'}}><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </div>
+                <h2 className="modal-title" style={{ fontSize: '1.25rem' }}>MIMI Studio Settings</h2>
+              </div>
               <button onClick={() => setShowSettings(false)} className="modal-close">&times;</button>
             </div>
 
-            <div className="providers-list" style={{ marginBottom: '1.5rem' }}>
-              {providers.map((provider, index) => (
-                <div key={provider.id} className="provider-card">
-                  <div className="provider-header">
-                    <span>{provider.name || `Provider ${index + 1}`}</span>
-                    <div className="provider-actions">
-                      <button 
-                        onClick={() => {
-                          const newProviders = providers.filter(p => p.id !== provider.id);
-                          setProviders(newProviders);
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              {/* Settings Sidebar */}
+              <div style={{ width: '220px', background: 'var(--bg-deep)', borderRight: '1px solid var(--border-light)', padding: '1.25rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <button 
+                  onClick={() => setSettingsTab('ai')}
+                  style={{ 
+                    display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: 'none',
+                    background: settingsTab === 'ai' ? 'var(--bg-surface-elevated)' : 'transparent',
+                    color: settingsTab === 'ai' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    cursor: 'pointer', textAlign: 'left', fontWeight: settingsTab === 'ai' ? 600 : 400, transition: 'all 0.2s'
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1rem', height: '1rem'}}><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+                  AI & Models
+                </button>
+                <button 
+                  onClick={() => setSettingsTab('integrations')}
+                  style={{ 
+                    display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: 'none',
+                    background: settingsTab === 'integrations' ? 'var(--bg-surface-elevated)' : 'transparent',
+                    color: settingsTab === 'integrations' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    cursor: 'pointer', textAlign: 'left', fontWeight: settingsTab === 'integrations' ? 600 : 400, transition: 'all 0.2s'
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1rem', height: '1rem'}}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                  Integrations
+                </button>
+                <button 
+                  onClick={() => setSettingsTab('advanced')}
+                  style={{ 
+                    display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: 'none',
+                    background: settingsTab === 'advanced' ? 'var(--bg-surface-elevated)' : 'transparent',
+                    color: settingsTab === 'advanced' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    cursor: 'pointer', textAlign: 'left', fontWeight: settingsTab === 'advanced' ? 600 : 400, transition: 'all 0.2s'
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1rem', height: '1rem'}}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                  Advanced
+                </button>
+              </div>
+
+              {/* Settings Content Area */}
+              <div style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
+                
+                {settingsTab === 'ai' && (
+                  <div className="fade-in">
+                    <div style={{ marginBottom: '2rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <div>
+                          <h3 style={{ fontSize: '1.1rem', margin: 0 }}>AI Providers</h3>
+                          <p style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', margin: '0.25rem 0 0 0' }}>Configure your LLM connection points</p>
+                        </div>
+                        <button 
+                          className="add-provider-btn"
+                          onClick={() => {
+                            const newProvider: Provider = { id: Date.now().toString(), name: "", baseUrl: "", apiKey: "" };
+                            setProviders([...providers, newProvider]);
+                          }}
+                          style={{ margin: 0, padding: '0.5rem 1rem', borderRadius: '0.5rem' }}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '14px', height: '14px'}}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                          Add Provider
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {providers.map((provider, index) => (
+                          <div key={provider.id} className="provider-card" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', padding: '1rem', borderRadius: '1rem' }}>
+                            <div className="provider-header" style={{ marginBottom: '1rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: provider.baseUrl ? '#22c55e' : 'var(--text-tertiary)' }}></div>
+                                <span style={{ fontWeight: 600 }}>{provider.name || `New Provider`}</span>
+                              </div>
+                              <button 
+                                onClick={() => setProviders(providers.filter(p => p.id !== provider.id))}
+                                style={{ color: '#ef4444', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px' }}
+                              >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '16px', height: '16px'}}><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                              </button>
+                            </div>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                              <input 
+                                type="text" value={provider.name} placeholder="Name" className="form-input"
+                                onChange={(e) => {
+                                  const next = [...providers]; next[index].name = e.target.value; setProviders(next);
+                                }}
+                              />
+                              <input 
+                                type="text" value={provider.baseUrl} placeholder="API URL" className="form-input"
+                                onChange={(e) => {
+                                  const next = [...providers]; next[index].baseUrl = e.target.value; setProviders(next);
+                                }}
+                              />
+                              <input 
+                                type="password" value={provider.apiKey} placeholder="API Key" className="form-input"
+                                onChange={(e) => {
+                                  const next = [...providers]; next[index].apiKey = e.target.value; setProviders(next);
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="settings-section" style={{ borderTop: '1px solid var(--border-light)', paddingTop: '2rem' }}>
+                      <div className="model-header-row" style={{ marginBottom: '1rem' }}>
+                        <div>
+                          <h3 style={{ fontSize: '1.1rem', margin: 0 }}>Active Model</h3>
+                          <p style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', margin: '0.25rem 0 0 0' }}>The default model for new conversations</p>
+                        </div>
+                        <button onClick={fetchModels} disabled={isFetchingModels} className="fetch-btn" style={{ padding: '0.5rem 1rem' }}>
+                          {isFetchingModels ? "Refreching..." : "Sync Models"}
+                        </button>
+                      </div>
+                      
+                      {modelError && <div className="error-text" style={{ marginBottom: '1rem' }}>{modelError}</div>}
+                      
+                      <CustomModelSelect 
+                        availableModels={availableModels}
+                        selectedProviderId={selectedProviderId}
+                        selectedModelId={selectedModelId}
+                        onSelect={(pId: string, mId: string) => {
+                          setSelectedProviderId(pId);
+                          setSelectedModelId(mId);
                         }}
-                        title="Delete Provider"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {settingsTab === 'integrations' && (
+                  <div className="fade-in">
+                    <h3 style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>External Tools</h3>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                      {/* Web Search Card */}
+                      <div className="provider-card" style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '1.25rem', border: '1px solid var(--border-light)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                          <div style={{ width: '3rem', height: '3rem', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6366f1' }}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1.5rem', height: '1.5rem'}}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: '1rem' }}>Web Search (Tavily API)</h4>
+                            <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Gives AI real-time internet access</p>
+                          </div>
+                        </div>
+
+                        <input 
+                          type="password" value={tavilyApiKey} className="form-input" placeholder="Tavily API Key (tvly-...)"
+                          onChange={(e) => setTavilyApiKey(e.target.value)}
+                          style={{ padding: '0.75rem', marginBottom: '1rem' }}
+                        />
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: 'var(--bg-deep)', borderRadius: '0.75rem' }}>
+                          <span style={{ fontSize: '0.85rem' }}>Enable by default for new chats</span>
+                          <button 
+                            className={`search-toggle-btn ${defaultWebSearch ? 'active' : ''}`}
+                            onClick={() => setDefaultWebSearch(!defaultWebSearch)}
+                            style={{ padding: '0.25rem 0.75rem', width: 'auto', height: 'auto', borderRadius: '1rem' }}
+                          >
+                            {defaultWebSearch ? "ON" : "OFF"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Gmail Card */}
+                      <div className="provider-card" style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '1.25rem', border: '1px solid var(--border-light)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                          <div style={{ width: '3rem', height: '3rem', background: gmailAccessToken ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: gmailAccessToken ? '#22c55e' : '#ef4444' }}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1.5rem', height: '1.5rem'}}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: '1rem' }}>Gmail Integration</h4>
+                            <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Allow AI to read and search your messages</p>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: 'var(--bg-deep)', borderRadius: '0.75rem' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Status: {gmailAccessToken ? "Connected" : "Disconnected"}</span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{gmailAccessToken ? "Linked to your Google account" : "No account linked"}</span>
+                          </div>
+                          {gmailAccessToken ? (
+                            <button 
+                              onClick={() => { setGmailAccessToken(null); setGmailRefreshToken(null); setGmailTokenExpiry(null); }}
+                              style={{ padding: '0.5rem 1rem', borderRadius: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: 'none', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                              Disconnect
+                            </button>
+                          ) : (
+                            <button 
+                              onClick={() => {
+                                const width = 500, height = 600;
+                                const left = (window.innerWidth - width) / 2;
+                                const top = (window.innerHeight - height) / 2;
+                                window.open('/api/gmail/auth', 'google-auth', `width=${width},height=${height},top=${top},left=${left}`);
+                              }}
+                              style={{ padding: '0.5rem 1rem', borderRadius: '0.5rem', background: 'var(--accent-base)', color: 'white', border: 'none', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                              Connect
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {settingsTab === 'advanced' && (
+                  <div className="fade-in">
+                    <h3 style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>Maintenance & Data</h3>
+                    
+                    <div style={{ background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '1.5rem', borderRadius: '1.25rem' }}>
+                      <h4 style={{ color: '#ef4444', margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1.1rem', height: '1.1rem'}}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        Danger Zone
+                      </h4>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                        This will permanently delete all your conversation history from this browser. This action cannot be undone.
+                      </p>
+                      <button 
+                        onClick={() => setShowDeleteAllConfirm(true)} 
+                        className="submit-btn" 
+                        style={{ width: 'auto', padding: '0.75rem 1.5rem', background: '#ef4444', color: 'white', border: 'none', boxShadow: '0 0 20px rgba(239, 68, 68, 0.2)' }}
                       >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: '16px', height: '16px'}}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        Delete All Chat History
                       </button>
                     </div>
                   </div>
-                  
-                  <div className="form-group" style={{ marginBottom: '0.5rem' }}>
-                    <input 
-                      type="text" 
-                      value={provider.name}
-                      onChange={(e) => {
-                        const newProviders = [...providers];
-                        newProviders[index].name = e.target.value;
-                        setProviders(newProviders);
-                      }}
-                      placeholder="Provider Name (e.g. Ollama, OpenRouter)"
-                      className="form-input"
-                      style={{ padding: '0.5rem' }}
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ marginBottom: '0.5rem' }}>
-                    <input 
-                      type="text" 
-                      value={provider.baseUrl}
-                      onChange={(e) => {
-                        const newProviders = [...providers];
-                        newProviders[index].baseUrl = e.target.value;
-                        setProviders(newProviders);
-                      }}
-                      placeholder="http://localhost:11434/v1"
-                      className="form-input"
-                      style={{ padding: '0.5rem' }}
-                    />
-                  </div>
-                  
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <input 
-                      type="password" 
-                      value={provider.apiKey}
-                      onChange={(e) => {
-                        const newProviders = [...providers];
-                        newProviders[index].apiKey = e.target.value;
-                        setProviders(newProviders);
-                      }}
-                      placeholder="API Key (sk-...)"
-                      className="form-input"
-                      style={{ padding: '0.5rem' }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="settings-section" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-light)' }}>
-              <label className="form-label">Web Search (Tavily API)</label>
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <input 
-                  type="password" 
-                  value={tavilyApiKey}
-                  onChange={(e) => setTavilyApiKey(e.target.value)}
-                  placeholder="Tavily API Key (tvly-...)"
-                  className="form-input"
-                  style={{ padding: '0.75rem' }}
-                />
-                <p style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: '0.5rem' }}>
-                  Get a free key at <a href="https://tavily.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-base)', textDecoration: 'underline' }}>tavily.com</a> to enable real-time search.
-                </p>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem' }}>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Enabled by default for new chats</span>
-                  <button 
-                    className={`search-toggle-btn ${defaultWebSearch ? 'active' : ''}`}
-                    onClick={() => setDefaultWebSearch(!defaultWebSearch)}
-                    style={{ padding: '0.2rem 0.5rem', width: 'auto', height: 'auto', borderRadius: '1rem', fontSize: '0.75rem' }}
-                  >
-                    {defaultWebSearch ? "ON" : "OFF"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="settings-section" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-light)' }}>
-                <label className="form-label">Gmail Integration</label>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-deep)', padding: '0.75rem', borderRadius: '0.75rem', border: '1px solid var(--border-light)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ width: '2.5rem', height: '2.5rem', background: gmailAccessToken ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: gmailAccessToken ? '#22c55e' : '#ef4444' }}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1.25rem', height: '1.25rem', margin: 'auto'}}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{gmailAccessToken ? "Connected" : "Disconnected"}</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{gmailAccessToken ? "AI can search your emails" : "Sync emails with MIMI"}</span>
-                    </div>
-                  </div>
-                  
-                  {gmailAccessToken ? (
-                    <button 
-                      onClick={() => {
-                        setGmailAccessToken(null);
-                        setGmailRefreshToken(null);
-                        setGmailTokenExpiry(null);
-                      }}
-                      style={{ padding: '0.4rem 0.75rem', borderRadius: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', fontSize: '0.75rem', fontWeight: 600 }}
-                    >
-                      Disconnect
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => {
-                        const width = 500, height = 600;
-                        const left = (window.innerWidth - width) / 2;
-                        const top = (window.innerHeight - height) / 2;
-                        window.open('/api/gmail/auth', 'google-auth', `width=${width},height=${height},top=${top},left=${left}`);
-                      }}
-                      style={{ padding: '0.4rem 0.75rem', borderRadius: '0.5rem', background: 'var(--accent-base)', color: 'white', fontSize: '0.75rem', fontWeight: 600 }}
-                    >
-                      Connect Gmail
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             </div>
 
-            <button 
-              className="add-provider-btn"
-              onClick={() => {
-                const newProvider: Provider = {
-                  id: Date.now().toString(),
-                  name: "",
-                  baseUrl: "",
-                  apiKey: ""
-                };
-                setProviders([...providers, newProvider]);
-              }}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '16px', height: '16px'}}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              Add Another Provider
-            </button>
-
-            <div className="model-select-wrapper" style={{ marginTop: '2rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.5rem' }}>
-              <div className="model-header-row">
-                <label className="form-label" style={{marginBottom: 0}}>Default Active Model</label>
-                <button onClick={fetchModels} disabled={isFetchingModels} className="fetch-btn">
-                  {isFetchingModels ? "Fetching..." : "Fetch All Models"}
-                </button>
-              </div>
-              
-              {modelError && <div className="error-text">{modelError}</div>}
-              
-              <div style={{ marginTop: '0.5rem' }}>
-                <CustomModelSelect 
-                  availableModels={availableModels}
-                  selectedProviderId={selectedProviderId}
-                  selectedModelId={selectedModelId}
-                  onSelect={(pId: string, mId: string) => {
-                    setSelectedProviderId(pId);
-                    setSelectedModelId(mId);
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <button 
-                onClick={() => setShowDeleteAllConfirm(true)} 
-                className="submit-btn" 
-                style={{ width: '100%', background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', boxShadow: 'none' }}
-              >
-                Delete All Chats
-              </button>
-              <button onClick={() => setShowSettings(false)} className="submit-btn" style={{ width: '100%' }}>
+            {/* Modal Footer */}
+            <div className="modal-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowSettings(false)} className="submit-btn" style={{ minWidth: '120px' }}>
                 Done
               </button>
             </div>
