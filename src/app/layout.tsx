@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SettingsProvider } from "@/context/SettingsContext";
 import { ChatProvider } from "@/context/ChatContext";
+import { ArtifactProvider } from "@/context/ArtifactContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,9 +19,11 @@ export default function RootLayout({
       <body>
         <SettingsProvider>
           <ChatProvider>
-            <div className="app-container">
-              {children}
-            </div>
+            <ArtifactProvider>
+              <div className="app-container">
+                {children}
+              </div>
+            </ArtifactProvider>
           </ChatProvider>
         </SettingsProvider>
       </body>

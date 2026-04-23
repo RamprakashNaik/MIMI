@@ -7,14 +7,17 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 import { extractTextFromFile, formatDocumentForPrompt, getFileCategory, FileCategory } from "@/lib/fileParser";
+import { useArtifacts, Artifact, ArtifactType } from "@/context/ArtifactContext";
 
 // ...
 
 const CodeBlock = ({ inline, className, children, ...props }: any) => {
   const match = /language-(\w+)/.exec(className || '');
   const [copied, setCopied] = useState(false);
+  const { addOrUpdateArtifact } = useArtifacts();
   
   const handleCopy = () => {
     navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
@@ -22,24 +25,45 @@ const CodeBlock = ({ inline, className, children, ...props }: any) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleView = () => {
+    const content = String(children).replace(/\n$/, '');
+    const lang = match ? match[1] : 'html';
+    addOrUpdateArtifact({
+      id: `temp-${Math.random().toString(36).substr(2, 9)}`,
+      type: (lang === 'svg' ? 'svg' : 'html') as any,
+      title: 'Code Preview',
+      content: content
+    });
+  };
+
   if (!inline && match) {
+    const isViewable = ['html', 'svg', 'xml'].includes(match[1]);
+
     return (
       <div className="code-block-wrapper">
         <div className="code-block-header">
           <span className="code-language">{match[1]}</span>
-          <button onClick={handleCopy} className="code-copy-btn" title="Copy Code">
-            {copied ? (
-              <>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                Copied!
-              </>
-            ) : (
-              <>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                Copy
-              </>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {isViewable && (
+              <button onClick={handleView} className="code-copy-btn" title="View Artifact">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:'14px',height:'14px'}}><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                View
+              </button>
             )}
-          </button>
+            <button onClick={handleCopy} className="code-copy-btn" title="Copy Code">
+              {copied ? (
+                <>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  Copy
+                </>
+              )}
+            </button>
+          </div>
         </div>
         <pre className={className} {...props}>
           <code>{children}</code>
@@ -48,6 +72,63 @@ const CodeBlock = ({ inline, className, children, ...props }: any) => {
     );
   }
   return <code className={className} {...props}>{children}</code>;
+};
+
+// ── ArtifactBox ─────────────────────────────────────────────────────────────
+
+const ArtifactBox = ({ type, title, identifier, children }: any) => {
+  const { artifacts, addOrUpdateArtifact } = useArtifacts();
+  const [copied, setCopied] = useState(false);
+  
+  // Find the actual artifact data from our context (parsed in the useEffect)
+  const artifactData = artifacts.find(a => a.id === identifier);
+  
+  const content = artifactData ? artifactData.content : "";
+
+  const handleCopy = () => {
+    if (!content) return;
+    navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleView = () => {
+    if (artifactData) {
+      addOrUpdateArtifact(artifactData);
+    }
+  };
+
+  if (!artifactData) return null; // Or show a placeholder
+
+  return (
+    <div className="artifact-chat-box">
+      <div className="artifact-chat-header">
+        <div className="artifact-chat-info">
+          <div className="artifact-chat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+          </div>
+          <div className="artifact-chat-details">
+            <span className="artifact-chat-title">{artifactData.title || title || 'Untitled Artifact'}</span>
+            <span className="artifact-chat-type">{artifactData.type || type}</span>
+          </div>
+        </div>
+        <div className="artifact-chat-actions">
+          <button className="artifact-chat-btn" onClick={handleView}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            View
+          </button>
+          <button className="artifact-chat-btn" onClick={handleCopy}>
+            {copied ? 'Copied!' : (
+              <>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Copy
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const CustomModelSelect = ({ availableModels, selectedProviderId, selectedModelId, onSelect }: any) => {
@@ -187,6 +268,85 @@ const DocChip = ({ name, type, fileSize, compact }: { name: string; type: string
   );
 };
 
+// ── ArtifactPanel ─────────────────────────────────────────────────────────────
+
+
+
+const ArtifactPanel = ({ width }: { width: number }) => {
+  const { activeArtifact, isPanelOpen, setIsPanelOpen } = useArtifacts();
+
+  if (!activeArtifact || !isPanelOpen) return null;
+
+  const downloadArtifact = () => {
+    const ext = activeArtifact.type === 'html' ? 'html' : activeArtifact.type === 'svg' ? 'svg' : 'txt';
+    const blob = new Blob([activeArtifact.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeArtifact.title || 'artifact'}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const getIframeSrc = () => {
+    if (activeArtifact.type === 'svg') {
+      return `
+        <html>
+          <head>
+            <style>
+              body { margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #ffffff; }
+              svg { max-width: 100%; max-height: 100vh; height: auto; }
+            </style>
+          </head>
+          <body>${activeArtifact.content}</body>
+        </html>
+      `;
+    }
+    return activeArtifact.content;
+  };
+
+  return (
+    <div 
+      className={`artifact-view ${isPanelOpen ? 'open' : ''}`} 
+      style={{ width: `${width}px`, transition: isPanelOpen ? 'width 0.3s ease' : 'none' }}
+    >
+      <div className="artifact-header">
+        <div className="logo-box" style={{width: '2rem', height: '2rem'}}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: '1.2rem', height: '1.2rem', stroke: 'white'}}>
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+          </svg>
+        </div>
+        <h3 className="artifact-title">{activeArtifact.title}</h3>
+        <div className="artifact-actions">
+          <button className="artifact-btn" onClick={downloadArtifact} title="Download">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '16px', height: '16px'}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          </button>
+          <button className="artifact-btn" onClick={() => setIsPanelOpen(false)} title="Close Preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '16px', height: '16px'}}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+      </div>
+      <div className="artifact-content-container">
+        {activeArtifact.type === 'html' || activeArtifact.type === 'svg' ? (
+          <iframe 
+            srcDoc={getIframeSrc()}
+            className="artifact-iframe"
+            sandbox="allow-scripts"
+            title={activeArtifact.title}
+            style={{ background: '#ffffff' }}
+          />
+        ) : (
+          <pre className="artifact-code-view">
+            <code>{activeArtifact.content}</code>
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function Home() {
   // Contexts
   const { 
@@ -197,8 +357,11 @@ export default function Home() {
     selectedProviderId, setSelectedProviderId 
   } = useSettings();
   const { chats, activeChatId, setActiveChatId, createNewChat, addMessage, updateMessage, deleteChat, renameChat, togglePinChat, updateChatModel, deleteAllChats } = useChat();
+  const { addOrUpdateArtifact, isPanelOpen, setIsPanelOpen } = useArtifacts();
 
   // Local State
+  const [panelWidth, setPanelWidth] = useState(600); // Default width
+  const [isResizing, setIsResizing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showPicoModal, setShowPicoModal] = useState(false);
   const [picoForm, setPicoForm] = useState({ name: "", systemPrompt: "", firstMessage: "" });
@@ -347,6 +510,58 @@ export default function Home() {
     return () => window.removeEventListener("click", handleClick);
   }, []);
 
+  // ── Artifact Detection ──
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.role === 'assistant' && lastMsg.content) {
+      // Look for <artifact type="..." title="..." identifier="...">...</artifact>
+      const artifactRegex = /<artifact\s+type="([^"]+)"\s+title="([^"]+)"\s+identifier="([^"]+)"[^>]*>([\s\S]*?)<\/artifact>/gi;
+      let match;
+      while ((match = artifactRegex.exec(lastMsg.content)) !== null) {
+        const [, type, title, id, content] = match;
+        if (content && content.trim()) {
+          addOrUpdateArtifact({
+            id,
+            type: type as ArtifactType,
+            title,
+            content: content.trim()
+          });
+        }
+      }
+    }
+  }, [messages, addOrUpdateArtifact]);
+
+  // ── Auto-close Panel on Chat Switch ──
+  useEffect(() => {
+    setIsPanelOpen(false);
+  }, [activeChatId, setIsPanelOpen]);
+
+  // ── Resize Logic ──
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth > 300 && newWidth < window.innerWidth * 0.8) {
+        setPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = 'default';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
   const generateTitleForChat = async (chatId: string, userMessage: string, provider: Provider, modelId: string) => {
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -459,14 +674,28 @@ export default function Home() {
       return { role, content };
     });
 
+    const ARTIFACT_INSTRUCTIONS = `
+Whenever you are creating a standalone piece of content like a website, a document template, a diagram (SVG), or a substantial code snippet, you MUST wrap it in an <artifact> tag.
+Format:
+<artifact type="html|svg|code" title="Descriptive Title" identifier="unique-id">
+... content here ...
+</artifact>
+
+- Use 'html' for web pages, 'svg' for vector graphics, and 'code' for general snippets.
+- The user will see this in a premium side panel for preview and download.
+`;
+
     const activePicoId = activeChat ? activeChat.picoId : selectedPicoId;
     const activePico = picos.find(p => p.id === activePicoId);
-    if (activePico && activePico.systemPrompt) {
-      formattedMessages = [
-        { role: "system", content: activePico.systemPrompt },
-        ...formattedMessages
-      ];
-    }
+    
+    const systemContent = activePico && activePico.systemPrompt 
+      ? `${activePico.systemPrompt}\n\n${ARTIFACT_INSTRUCTIONS}`
+      : ARTIFACT_INSTRUCTIONS;
+
+    formattedMessages = [
+      { role: "system", content: systemContent },
+      ...formattedMessages
+    ];
     
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -806,146 +1035,165 @@ export default function Home() {
           <span style={{marginLeft: 'auto', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-tertiary)'}}>{activeChat?.title}</span>
         </div>
 
-        <div className="chat-area">
-          {messages.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">🤖</div>
-              <h2 className="empty-title">
-                {activeChat?.picoId ? `Pico: ${picos.find(p => p.id === activeChat.picoId)?.name}` : "Hi, I'm MIMI"}
-              </h2>
-              <p className="empty-subtitle">Your secure, local AI running beautifully on your terms.</p>
-              
-              <div className="suggestions-grid">
-                 <button onClick={() => sendMessage("Write a 5-step plan to launch a successful app")} className="suggestion-btn">
-                    "Write a 5-step plan to launch a successful app..."
-                 </button>
-                 <button onClick={() => sendMessage("Explain how local LLMs work under the hood")} className="suggestion-btn">
-                    "Explain how local LLMs work under the hood..."
-                 </button>
+        <div className={`main-layout-container ${isResizing ? 'resizing' : ''}`}>
+          <div className={`chat-view ${isPanelOpen ? 'panel-open' : ''}`}>
+            <div className="chat-area">
+              {messages.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">🤖</div>
+                  <h2 className="empty-title">
+                    {activeChat?.picoId ? `Pico: ${picos.find(p => p.id === activeChat.picoId)?.name}` : "Hi, I'm MIMI"}
+                  </h2>
+                  <p className="empty-subtitle">Your secure, local AI running beautifully on your terms.</p>
+                  
+                  <div className="suggestions-grid">
+                     <button onClick={() => sendMessage("Write a 5-step plan to launch a successful app")} className="suggestion-btn">
+                        "Write a 5-step plan to launch a successful app..."
+                     </button>
+                     <button onClick={() => sendMessage("Explain how local LLMs work under the hood")} className="suggestion-btn">
+                        "Explain how local LLMs work under the hood..."
+                     </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="message-list">
+                  {messages.map((msg) => (
+                    <div key={msg.id} className={`message-wrapper ${msg.role}`}>
+                      <span className="message-label">{msg.role === 'user' ? 'You' : 'MIMI'}</span>
+                      <div className="message-bubble">
+                        {msg.attachments && msg.attachments.length > 0 && (
+                          <div className="message-attachments-display">
+                            {msg.attachments.map((att, i) => (
+                              att.dataUrl
+                                ? <img key={i} src={att.dataUrl} alt={att.name} className="message-attachment-img" />
+                                : <DocChip key={i} name={att.name} type={att.type} fileSize={att.fileSize} />
+                            ))}
+                          </div>
+                        )}
+                        
+                        {msg.role === 'assistant' && !msg.content ? (
+                          <span style={{display:'flex', gap:'0.4rem', alignItems:'center', padding:'0.1rem 0'}}>
+                            <span className="typing-dot"></span>
+                            <span className="typing-dot"></span>
+                            <span className="typing-dot"></span>
+                          </span>
+                        ) : (
+                          <div className="markdown-content">
+                            <ReactMarkdown 
+                              remarkPlugins={[remarkGfm, remarkMath]}
+                              rehypePlugins={[rehypeKatex, rehypeRaw]}
+                              components={{ 
+                                code: CodeBlock,
+                                artifact: ArtifactBox
+                              } as any}
+                            >
+                              {msg.content}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {isTyping && messages[messages.length - 1]?.role === 'user' && (
+                    <div className="message-wrapper assistant typing-indicator">
+                      <span className="message-label">MIMI</span>
+                      <div className="message-bubble">
+                        <span className="typing-dot"></span>
+                        <span className="typing-dot"></span>
+                        <span className="typing-dot"></span>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
+            </div>
+
+            <div className="input-area-wrapper">
+              {(pendingAttachments.length > 0 || isParsing) && (
+                <div className="attachment-preview-tray">
+                  {isParsing && (
+                    <div className="doc-chip parsing">
+                      <span style={{display:'flex',gap:'0.3rem',alignItems:'center'}}>
+                        <span className="typing-dot" style={{width:'6px',height:'6px'}}></span>
+                        <span className="typing-dot" style={{width:'6px',height:'6px'}}></span>
+                        <span className="typing-dot" style={{width:'6px',height:'6px'}}></span>
+                      </span>
+                      <span>Parsing…</span>
+                    </div>
+                  )}
+                  {pendingAttachments.map((att, i) => (
+                    <div key={i} className={`attachment-preview-item ${att.category !== 'image' ? 'doc-preview-item' : ''}`}>
+                      {att.dataUrl
+                        ? <img src={att.dataUrl} alt={att.name} className="attachment-thumbnail" />
+                        : <DocChip name={att.name} type={att.type} fileSize={att.fileSize} compact />
+                      }
+                      <button onClick={() => setPendingAttachments(prev => prev.filter((_, idx) => idx !== i))} className="attachment-remove-btn" title="Remove attachment">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="input-container">
+                <button className="attach-button" onClick={() => fileInputRef.current?.click()} title="Attach File">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: "1.25rem", height: "1.25rem"}}>
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                  </svg>
+                </button>
+                <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md" multiple hidden />
+                
+                <textarea 
+                  value={input}
+                  onChange={autoResizeTextarea}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  placeholder="Message MIMI..." 
+                  rows={1}
+                  className="chat-input"
+                />
+                {isTyping ? (
+                  <button 
+                    onClick={stopMessage}
+                    className="send-button"
+                    style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-light)' }}
+                    title="Stop Generating"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" style={{width: "1rem", height: "1rem"}}>
+                      <rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect>
+                    </svg>
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => sendMessage()}
+                    disabled={!input.trim() && pendingAttachments.length === 0}
+                    className="send-button"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: "1.25rem", height: "1.25rem"}}>
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                  </button>
+                )}
+              </div>
+              <div className="disclaimer-text">
+                AI can make mistakes. Verify important information.
               </div>
             </div>
-          ) : (
-            <div className="message-list">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`message-wrapper ${msg.role}`}>
-                  <span className="message-label">{msg.role === 'user' ? 'You' : 'MIMI'}</span>
-                  <div className="message-bubble">
-                    {msg.attachments && msg.attachments.length > 0 && (
-                      <div className="message-attachments-display">
-                        {msg.attachments.map((att, i) => (
-                          att.dataUrl
-                            ? <img key={i} src={att.dataUrl} alt={att.name} className="message-attachment-img" />
-                            : <DocChip key={i} name={att.name} type={att.type} fileSize={att.fileSize} />
-                        ))}
-                      </div>
-                    )}
-                    
-                    {msg.role === 'assistant' && !msg.content ? (
-                      <span style={{display:'flex', gap:'0.4rem', alignItems:'center', padding:'0.1rem 0'}}>
-                        <span className="typing-dot"></span>
-                        <span className="typing-dot"></span>
-                        <span className="typing-dot"></span>
-                      </span>
-                    ) : (
-                      <div className="markdown-content">
-                        <ReactMarkdown 
-                          remarkPlugins={[remarkGfm, remarkMath]}
-                          rehypePlugins={[rehypeKatex]}
-                          components={{ code: CodeBlock }}
-                        >
-                          {msg.content}
-                        </ReactMarkdown>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              
-              {isTyping && messages[messages.length - 1]?.role === 'user' && (
-                <div className="message-wrapper assistant typing-indicator">
-                  <span className="message-label">MIMI</span>
-                  <div className="message-bubble">
-                    <span className="typing-dot"></span>
-                    <span className="typing-dot"></span>
-                    <span className="typing-dot"></span>
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
+          </div>
 
-        <div className="input-area-wrapper">
-          {(pendingAttachments.length > 0 || isParsing) && (
-            <div className="attachment-preview-tray">
-              {isParsing && (
-                <div className="doc-chip parsing">
-                  <span style={{display:'flex',gap:'0.3rem',alignItems:'center'}}>
-                    <span className="typing-dot" style={{width:'6px',height:'6px'}}></span>
-                    <span className="typing-dot" style={{width:'6px',height:'6px'}}></span>
-                    <span className="typing-dot" style={{width:'6px',height:'6px'}}></span>
-                  </span>
-                  <span>Parsing…</span>
-                </div>
-              )}
-              {pendingAttachments.map((att, i) => (
-                <div key={i} className={`attachment-preview-item ${att.category !== 'image' ? 'doc-preview-item' : ''}`}>
-                  {att.dataUrl
-                    ? <img src={att.dataUrl} alt={att.name} className="attachment-thumbnail" />
-                    : <DocChip name={att.name} type={att.type} fileSize={att.fileSize} compact />
-                  }
-                  <button onClick={() => setPendingAttachments(prev => prev.filter((_, idx) => idx !== i))} className="attachment-remove-btn" title="Remove attachment">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="input-container">
-            <button className="attach-button" onClick={() => fileInputRef.current?.click()} title="Attach File">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: "1.25rem", height: "1.25rem"}}>
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
-              </svg>
-            </button>
-            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md" multiple hidden />
-            
-            <textarea 
-              value={input}
-              onChange={autoResizeTextarea}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              placeholder="Message MIMI..." 
-              rows={1}
-              className="chat-input"
+          {isPanelOpen && (
+            <div 
+              className={`resize-handle ${isResizing ? 'active' : ''}`} 
+              onMouseDown={() => setIsResizing(true)}
             />
-            {isTyping ? (
-              <button 
-                onClick={stopMessage}
-                className="send-button"
-                style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-light)' }}
-                title="Stop Generating"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" style={{width: "1rem", height: "1rem"}}>
-                  <rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect>
-                </svg>
-              </button>
-            ) : (
-              <button 
-                onClick={() => sendMessage()}
-                disabled={!input.trim()}
-                className="send-button"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: "1.25rem", height: "1.25rem"}}>
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-              </button>
-            )}
-          </div>
-          <div className="disclaimer-text">
-            AI can make mistakes. Verify important information.
-          </div>
+          )}
+
+          <ArtifactPanel width={panelWidth} />
+
+          {/* Overlay to prevent iframe from swallowing mouse events during resize */}
+          {isResizing && <div className="resize-overlay" />}
         </div>
       </main>
 
