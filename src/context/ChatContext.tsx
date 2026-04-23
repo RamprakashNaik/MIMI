@@ -14,6 +14,11 @@ export type Message = {
     extractedText?: string; // documents: PDF / Word / Excel / text
     fileSize?: number;      // bytes
   }[];
+  searchResults?: {
+    title: string;
+    url: string;
+    content: string;
+  }[];
 };
 
 export type Chat = {
@@ -175,13 +180,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setActiveChatId(null);
   };
 
+  const contextValue = React.useMemo(() => ({
+    chats, activeChatId, setActiveChatId,
+    createNewChat, addMessage, updateMessage,
+    deleteChat, renameChat, togglePinChat, updateChatModel,
+    deleteAllChats
+  }), [chats, activeChatId]);
+
   return (
-    <ChatContext.Provider value={{
-      chats, activeChatId, setActiveChatId,
-      createNewChat, addMessage, updateMessage,
-      deleteChat, renameChat, togglePinChat, updateChatModel,
-      deleteAllChats
-    }}>
+    <ChatContext.Provider value={contextValue}>
       {children}
     </ChatContext.Provider>
   );

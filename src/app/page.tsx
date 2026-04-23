@@ -101,30 +101,44 @@ const ArtifactBox = ({ type, title, identifier, children }: any) => {
   if (!artifactData) return null; // Or show a placeholder
 
   return (
-    <div className="artifact-chat-box">
+    <div className={`artifact-chat-box ${artifactData.status === 'generating' ? 'generating' : ''}`}>
       <div className="artifact-chat-header">
         <div className="artifact-chat-info">
           <div className="artifact-chat-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            {artifactData.status === 'generating' ? (
+              <div className="generating-spinner">
+                <span className="typing-dot"></span>
+                <span className="typing-dot"></span>
+                <span className="typing-dot"></span>
+              </div>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            )}
           </div>
           <div className="artifact-chat-details">
             <span className="artifact-chat-title">{artifactData.title || title || 'Untitled Artifact'}</span>
-            <span className="artifact-chat-type">{artifactData.type || type}</span>
+            <span className="artifact-chat-type">
+              {artifactData.status === 'generating' ? 'Generating Content...' : (artifactData.type || type)}
+            </span>
           </div>
         </div>
         <div className="artifact-chat-actions">
-          <button className="artifact-chat-btn" onClick={handleView}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-            View
-          </button>
-          <button className="artifact-chat-btn" onClick={handleCopy}>
-            {copied ? 'Copied!' : (
-              <>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                Copy
-              </>
-            )}
-          </button>
+          {artifactData.status !== 'generating' && (
+            <>
+              <button className="artifact-chat-btn" onClick={handleView}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                View
+              </button>
+              <button className="artifact-chat-btn" onClick={handleCopy}>
+                {copied ? 'Copied!' : (
+                  <>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    Copy
+                  </>
+                )}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -268,6 +282,41 @@ const DocChip = ({ name, type, fileSize, compact }: { name: string; type: string
   );
 };
 
+// ── SourcePanel ─────────────────────────────────────────────────────────────
+
+const SourcePanel = ({ sources }: { sources: { title: string; url: string; content: string }[] }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  if (!sources || sources.length === 0) return null;
+
+  return (
+    <div className="source-panel">
+      <button className="source-toggle" onClick={() => setIsOpen(!isOpen)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:'14px',height:'14px'}}>
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+        <span>Sources ({sources.length})</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:'14px',height:'14px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s'}}>
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
+      {isOpen && (
+        <div className="source-list">
+          {sources.map((s, i) => (
+            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="source-item">
+              <span className="source-index">{i + 1}</span>
+              <div className="source-meta">
+                <span className="source-title">{s.title}</span>
+                <span className="source-url">{new URL(s.url).hostname}</span>
+              </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:'12px',height:'12px', marginLeft:'auto'}}><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── ArtifactPanel ─────────────────────────────────────────────────────────────
 
 
@@ -354,7 +403,9 @@ export default function Home() {
     picos, setPicos,
     selectedPicoId, setSelectedPicoId,
     selectedModelId, setSelectedModelId, 
-    selectedProviderId, setSelectedProviderId 
+    selectedProviderId, setSelectedProviderId,
+    tavilyApiKey, setTavilyApiKey,
+    defaultWebSearch, setDefaultWebSearch
   } = useSettings();
   const { chats, activeChatId, setActiveChatId, createNewChat, addMessage, updateMessage, deleteChat, renameChat, togglePinChat, updateChatModel, deleteAllChats } = useChat();
   const { addOrUpdateArtifact, isPanelOpen, setIsPanelOpen } = useArtifacts();
@@ -362,7 +413,10 @@ export default function Home() {
   // Local State
   const [panelWidth, setPanelWidth] = useState(600); // Default width
   const [isResizing, setIsResizing] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [showPicoModal, setShowPicoModal] = useState(false);
   const [picoForm, setPicoForm] = useState({ name: "", systemPrompt: "", firstMessage: "" });
   
@@ -514,22 +568,46 @@ export default function Home() {
   useEffect(() => {
     const lastMsg = messages[messages.length - 1];
     if (lastMsg?.role === 'assistant' && lastMsg.content) {
-      // Look for <artifact type="..." title="..." identifier="...">...</artifact>
-      const artifactRegex = /<artifact\s+type="([^"]+)"\s+title="([^"]+)"\s+identifier="([^"]+)"[^>]*>([\s\S]*?)<\/artifact>/gi;
+      const content = lastMsg.content;
+      const completeIds = new Set<string>();
+
+      // 1. Match COMPLETE artifacts
+      const completeRegex = /<artifact\s+type="([^"]+)"\s+title="([^"]+)"\s+identifier="([^"]+)"[^>]*>([\s\S]*?)<\/artifact>/gi;
       let match;
-      while ((match = artifactRegex.exec(lastMsg.content)) !== null) {
-        const [, type, title, id, content] = match;
-        if (content && content.trim()) {
+      while ((match = completeRegex.exec(content)) !== null) {
+        const [, type, title, id, artifactContent] = match;
+        completeIds.add(id);
+        addOrUpdateArtifact({
+          id,
+          type: type as ArtifactType,
+          title,
+          content: artifactContent.trim(),
+          status: 'complete'
+        });
+      }
+
+      // 2. Match INCOMPLETE (generating) artifacts
+      // We look for the start tag and capture everything until the end of string or next tag
+      const openRegex = /<artifact\s+type="([^"]+)"\s+title="([^"]+)"\s+identifier="([^"]+)"[^>]*>([\s\S]*?)$/gi;
+      while ((match = openRegex.exec(content)) !== null) {
+        const [, type, title, id, artifactContent] = match;
+        if (!completeIds.has(id)) {
           addOrUpdateArtifact({
             id,
             type: type as ArtifactType,
             title,
-            content: content.trim()
+            content: artifactContent.trim(),
+            status: 'generating'
           });
         }
       }
     }
   }, [messages, addOrUpdateArtifact]);
+
+  // ── Auto-reset/sync Web Search on Chat Switch ──
+  useEffect(() => {
+    setWebSearchEnabled(defaultWebSearch);
+  }, [activeChatId, defaultWebSearch]);
 
   // ── Auto-close Panel on Chat Switch ──
   useEffect(() => {
@@ -643,6 +721,26 @@ export default function Home() {
       generateTitleForChat(targetChatId, textToSend, activeProvider, selectedModelId);
     }
 
+    let searchData: any[] = [];
+    if (webSearchEnabled) {
+      setIsSearching(true);
+      try {
+        const searchRes = await fetch("/api/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: textToSend, apiKey: tavilyApiKey })
+        });
+        if (searchRes.ok) {
+          const { results } = await searchRes.json();
+          searchData = results;
+        }
+      } catch (err) {
+        console.warn("Search failed:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }
+
     let formattedMessages = [...messages, userMessage].map(({ role, content, attachments }) => {
       if (attachments && attachments.length > 0) {
         const images = attachments.filter(a => a.dataUrl && !a.extractedText);
@@ -688,9 +786,13 @@ Format:
     const activePicoId = activeChat ? activeChat.picoId : selectedPicoId;
     const activePico = picos.find(p => p.id === activePicoId);
     
+    const SEARCH_INSTRUCTIONS = searchData.length > 0 
+      ? `\n\nYou have access to real-time search results for the user's query. Use this information to provide a factual, up-to-date answer. Cite your sources if relevant.\n\n<search_results>\n${searchData.map((r, i) => `[${i+1}] ${r.title}: ${r.content}`).join("\n\n")}\n</search_results>`
+      : "";
+
     const systemContent = activePico && activePico.systemPrompt 
-      ? `${activePico.systemPrompt}\n\n${ARTIFACT_INSTRUCTIONS}`
-      : ARTIFACT_INSTRUCTIONS;
+      ? `${activePico.systemPrompt}\n\n${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}`
+      : `${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}`;
 
     formattedMessages = [
       { role: "system", content: systemContent },
@@ -701,7 +803,12 @@ Format:
     abortControllerRef.current = abortController;
 
     const assistantId = Date.now().toString() + Math.random().toString();
-    addMessage(targetChatId, { id: assistantId, role: "assistant", content: "" });
+    addMessage(targetChatId, { 
+      id: assistantId, 
+      role: "assistant", 
+      content: "",
+      searchResults: searchData.length > 0 ? searchData : undefined
+    });
 
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -1070,6 +1177,10 @@ Format:
                             ))}
                           </div>
                         )}
+
+                        {msg.role === 'assistant' && msg.searchResults && (
+                          <SourcePanel sources={msg.searchResults} />
+                        )}
                         
                         {msg.role === 'assistant' && !msg.content ? (
                           <span style={{display:'flex', gap:'0.4rem', alignItems:'center', padding:'0.1rem 0'}}>
@@ -1094,6 +1205,16 @@ Format:
                       </div>
                     </div>
                   ))}
+                  
+                  {isSearching && (
+                    <div className="searching-indicator">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spinning" style={{width: '14px', height: '14px'}}>
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                      </svg>
+                      <span>Searching the web...</span>
+                    </div>
+                  )}
                   
                   {isTyping && messages[messages.length - 1]?.role === 'user' && (
                     <div className="message-wrapper assistant typing-indicator">
@@ -1137,11 +1258,23 @@ Format:
                 </div>
               )}
               <div className="input-container">
-                <button className="attach-button" onClick={() => fileInputRef.current?.click()} title="Attach File">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: "1.25rem", height: "1.25rem"}}>
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
-                  </svg>
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button className="attach-button" onClick={() => fileInputRef.current?.click()} title="Attach File">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: "1.25rem", height: "1.25rem"}}>
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                    </svg>
+                  </button>
+                  <button 
+                    className={`search-toggle-btn ${webSearchEnabled ? 'active' : ''}`} 
+                    onClick={() => setWebSearchEnabled(!webSearchEnabled)} 
+                    title="Enable Web Search"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: "1.1rem", height: "1.1rem"}}>
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                  </button>
+                </div>
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md" multiple hidden />
                 
                 <textarea 
@@ -1365,6 +1498,33 @@ Format:
               ))}
             </div>
 
+            <div className="settings-section" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-light)' }}>
+              <label className="form-label">Web Search (Tavily API)</label>
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <input 
+                  type="password" 
+                  value={tavilyApiKey}
+                  onChange={(e) => setTavilyApiKey(e.target.value)}
+                  placeholder="Tavily API Key (tvly-...)"
+                  className="form-input"
+                  style={{ padding: '0.75rem' }}
+                />
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: '0.5rem' }}>
+                  Get a free key at <a href="https://tavily.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-base)', textDecoration: 'underline' }}>tavily.com</a> to enable real-time search.
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Enabled by default for new chats</span>
+                  <button 
+                    className={`search-toggle-btn ${defaultWebSearch ? 'active' : ''}`}
+                    onClick={() => setDefaultWebSearch(!defaultWebSearch)}
+                    style={{ padding: '0.2rem 0.5rem', width: 'auto', height: 'auto', borderRadius: '1rem', fontSize: '0.75rem' }}
+                  >
+                    {defaultWebSearch ? "ON" : "OFF"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <button 
               className="add-provider-btn"
               onClick={() => {
@@ -1406,12 +1566,7 @@ Format:
 
             <div className="modal-footer" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <button 
-                onClick={() => {
-                  if (confirm("Are you sure you want to delete ALL chats? This cannot be undone.")) {
-                    deleteAllChats();
-                    setShowSettings(false);
-                  }
-                }} 
+                onClick={() => setShowDeleteAllConfirm(true)} 
                 className="submit-btn" 
                 style={{ width: '100%', background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', boxShadow: 'none' }}
               >
@@ -1537,6 +1692,36 @@ Format:
                 style={{ background: '#ef4444', boxShadow: '0 0 20px rgba(239, 68, 68, 0.3)' }}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDeleteAllConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-backdrop" onClick={() => setShowDeleteAllConfirm(false)}></div>
+          <div className="modal-content">
+            <div className="modal-header">
+              <h2 className="modal-title">Delete All Chats</h2>
+              <button onClick={() => setShowDeleteAllConfirm(false)} className="modal-close">&times;</button>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
+              Are you sure you want to delete ALL chats? This action cannot be undone.
+            </p>
+            <div className="modal-footer" style={{ display: 'flex', gap: '1rem' }}>
+              <button onClick={() => setShowDeleteAllConfirm(false)} className="submit-btn" style={{ background: 'var(--bg-surface-elevated)', boxShadow: 'none' }}>
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  deleteAllChats();
+                  setShowDeleteAllConfirm(false);
+                  setShowSettings(false);
+                }} 
+                className="submit-btn"
+                style={{ background: '#ef4444', boxShadow: '0 0 20px rgba(239, 68, 68, 0.3)' }}
+              >
+                Delete All
               </button>
             </div>
           </div>

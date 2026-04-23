@@ -10,6 +10,7 @@ export type Artifact = {
   title: string;
   content: string;
   language?: string;
+  status?: 'generating' | 'complete';
 };
 
 interface ArtifactContextType {
@@ -32,7 +33,7 @@ export function ArtifactProvider({ children }: { children: ReactNode }) {
     setArtifacts((prev) => {
       const exists = prev.findIndex((a) => a.id === artifact.id);
       if (exists !== -1) {
-        if (prev[exists].content === artifact.content && prev[exists].title === artifact.title) {
+        if (prev[exists].content === artifact.content && prev[exists].title === artifact.title && prev[exists].status === artifact.status) {
           return prev;
         }
         const updated = [...prev];
@@ -42,16 +43,19 @@ export function ArtifactProvider({ children }: { children: ReactNode }) {
       return [...prev, artifact];
     });
     
-    setActiveArtifact(artifact);
-    setIsPanelOpen(true);
+    // Only set as active and open if not already active or if status changed to generating/complete
+    setActiveArtifact(prev => (prev?.id === artifact.id && prev?.content === artifact.content && prev?.status === artifact.status) ? prev : artifact);
+    setIsPanelOpen(prev => prev ? prev : true);
   }, []); // No dependencies needed as setters are stable
 
+  const contextValue = React.useMemo(() => ({
+    activeArtifact, setActiveArtifact,
+    isPanelOpen, setIsPanelOpen,
+    artifacts, addOrUpdateArtifact
+  }), [activeArtifact, isPanelOpen, artifacts, addOrUpdateArtifact]);
+
   return (
-    <ArtifactContext.Provider value={{
-      activeArtifact, setActiveArtifact,
-      isPanelOpen, setIsPanelOpen,
-      artifacts, addOrUpdateArtifact
-    }}>
+    <ArtifactContext.Provider value={contextValue}>
       {children}
     </ArtifactContext.Provider>
   );

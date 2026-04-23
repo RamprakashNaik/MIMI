@@ -28,6 +28,10 @@ interface SettingsContextType {
   setSelectedModelId: (modelId: string | null) => void;
   selectedProviderId: string | null;
   setSelectedProviderId: (providerId: string | null) => void;
+  tavilyApiKey: string;
+  setTavilyApiKey: (key: string) => void;
+  defaultWebSearch: boolean;
+  setDefaultWebSearch: (enabled: boolean) => void;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -39,6 +43,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const [tavilyApiKey, setTavilyApiKey] = useState<string>("");
+  const [defaultWebSearch, setDefaultWebSearch] = useState<boolean>(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Load from LocalStorage on mount
@@ -48,7 +54,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const storedPicoId = localStorage.getItem("mimi_selectedPicoId");
     const storedModel = localStorage.getItem("mimi_selectedModelId");
     const storedProvider = localStorage.getItem("mimi_selectedProviderId");
-
+    const storedTavily = localStorage.getItem("mimi_tavily_key");
+    const storedDefaultSearch = localStorage.getItem("mimi_default_websearch");
+    
     if (storedProviders) {
       try { setProviders(JSON.parse(storedProviders)); } catch (e) {}
     } else {
@@ -85,6 +93,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     if (storedPicoId) setSelectedPicoId(storedPicoId);
     if (storedModel) setSelectedModelId(storedModel);
     if (storedProvider) setSelectedProviderId(storedProvider);
+    if (storedTavily) setTavilyApiKey(storedTavily);
+    if (storedDefaultSearch !== null) setDefaultWebSearch(storedDefaultSearch === "true");
     setIsLoaded(true);
   }, []);
 
@@ -97,21 +107,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     if (selectedPicoId) localStorage.setItem("mimi_selectedPicoId", selectedPicoId);
     else localStorage.removeItem("mimi_selectedPicoId");
 
-    if (selectedModelId) localStorage.setItem("mimi_selectedModelId", selectedModelId);
-    else localStorage.removeItem("mimi_selectedModelId");
-    
-    if (selectedProviderId) localStorage.setItem("mimi_selectedProviderId", selectedProviderId);
-    else localStorage.removeItem("mimi_selectedProviderId");
-  }, [providers, picos, selectedPicoId, selectedModelId, selectedProviderId, isLoaded]);
+    localStorage.setItem("mimi_selectedModelId", selectedModelId || "");
+    localStorage.setItem("mimi_selectedProviderId", selectedProviderId || "");
+    localStorage.setItem("mimi_tavily_key", tavilyApiKey);
+    localStorage.setItem("mimi_default_websearch", defaultWebSearch.toString());
+  }, [providers, picos, selectedPicoId, selectedModelId, selectedProviderId, tavilyApiKey, defaultWebSearch, isLoaded]);
+
+  const contextValue = React.useMemo(() => ({
+    providers, setProviders,
+    picos, setPicos,
+    selectedPicoId, setSelectedPicoId,
+    selectedModelId, setSelectedModelId,
+    selectedProviderId, setSelectedProviderId,
+    tavilyApiKey, setTavilyApiKey,
+    defaultWebSearch, setDefaultWebSearch
+  }), [providers, picos, selectedPicoId, selectedModelId, selectedProviderId, tavilyApiKey, defaultWebSearch]);
 
   return (
-    <SettingsContext.Provider value={{
-      providers, setProviders,
-      picos, setPicos,
-      selectedPicoId, setSelectedPicoId,
-      selectedModelId, setSelectedModelId,
-      selectedProviderId, setSelectedProviderId
-    }}>
+    <SettingsContext.Provider value={contextValue}>
       {children}
     </SettingsContext.Provider>
   );
