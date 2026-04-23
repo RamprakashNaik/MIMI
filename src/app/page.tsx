@@ -408,7 +408,13 @@ export default function Home() {
     defaultWebSearch, setDefaultWebSearch
   } = useSettings();
   const { chats, activeChatId, setActiveChatId, createNewChat, addMessage, updateMessage, deleteChat, renameChat, togglePinChat, updateChatModel, deleteAllChats } = useChat();
-  const { addOrUpdateArtifact, isPanelOpen, setIsPanelOpen } = useArtifacts();
+  const { 
+    activeArtifact, setActiveArtifact, 
+    isPanelOpen, setIsPanelOpen, 
+    artifacts, addOrUpdateArtifact 
+  } = useArtifacts();
+  
+  const lastProcessedContentRef = useRef<string>("");
 
   // Local State
   const [panelWidth, setPanelWidth] = useState(600); // Default width
@@ -417,6 +423,7 @@ export default function Home() {
   const [isSearching, setIsSearching] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [deletePicoId, setDeletePicoId] = useState<string | null>(null);
   const [showPicoModal, setShowPicoModal] = useState(false);
   const [picoForm, setPicoForm] = useState({ name: "", systemPrompt: "", firstMessage: "" });
   
@@ -569,6 +576,11 @@ export default function Home() {
     const lastMsg = messages[messages.length - 1];
     if (lastMsg?.role === 'assistant' && lastMsg.content) {
       const content = lastMsg.content;
+      
+      // Prevent redundant processing if content hasn't changed
+      if (content === lastProcessedContentRef.current) return;
+      lastProcessedContentRef.current = content;
+
       const completeIds = new Set<string>();
 
       // 1. Match COMPLETE artifacts
@@ -576,33 +588,42 @@ export default function Home() {
       let match;
       while ((match = completeRegex.exec(content)) !== null) {
         const [, type, title, id, artifactContent] = match;
+        const trimmed = artifactContent.trim();
         completeIds.add(id);
-        addOrUpdateArtifact({
-          id,
-          type: type as ArtifactType,
-          title,
-          content: artifactContent.trim(),
-          status: 'complete'
-        });
-      }
-
-      // 2. Match INCOMPLETE (generating) artifacts
-      // We look for the start tag and capture everything until the end of string or next tag
-      const openRegex = /<artifact\s+type="([^"]+)"\s+title="([^"]+)"\s+identifier="([^"]+)"[^>]*>([\s\S]*?)$/gi;
-      while ((match = openRegex.exec(content)) !== null) {
-        const [, type, title, id, artifactContent] = match;
-        if (!completeIds.has(id)) {
+        
+        // Only update if it's new or content changed
+        const existing = artifacts.find(a => a.id === id);
+        if (!existing || existing.content !== trimmed || existing.status !== 'complete') {
           addOrUpdateArtifact({
             id,
             type: type as ArtifactType,
             title,
-            content: artifactContent.trim(),
-            status: 'generating'
+            content: trimmed,
+            status: 'complete'
           });
         }
       }
+
+      // 2. Match INCOMPLETE (generating) artifacts
+      const openRegex = /<artifact\s+type="([^"]+)"\s+title="([^"]+)"\s+identifier="([^"]+)"[^>]*>([\s\S]*?)$/gi;
+      while ((match = openRegex.exec(content)) !== null) {
+        const [, type, title, id, artifactContent] = match;
+        const trimmed = artifactContent.trim();
+        if (!completeIds.has(id)) {
+          const existing = artifacts.find(a => a.id === id);
+          if (!existing || existing.content !== trimmed || existing.status !== 'generating') {
+            addOrUpdateArtifact({
+              id,
+              type: type as ArtifactType,
+              title,
+              content: trimmed,
+              status: 'generating'
+            });
+          }
+        }
+      }
     }
-  }, [messages, addOrUpdateArtifact]);
+  }, [messages, addOrUpdateArtifact, artifacts]);
 
   // ── Auto-reset/sync Web Search on Chat Switch ──
   useEffect(() => {
@@ -1034,12 +1055,7 @@ Format:
             </select>
             {selectedPicoId && (
               <button 
-                onClick={() => {
-                  if (confirm("Are you sure you want to delete this Persona?")) {
-                    setPicos(picos.filter(p => p.id !== selectedPicoId));
-                    setSelectedPicoId(null);
-                  }
-                }}
+                onClick={() => setDeletePicoId(selectedPicoId)}
                 title="Delete Persona"
                 style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: '#ef4444', width: '2rem', height: '2rem', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
               >
@@ -1722,6 +1738,37 @@ Format:
                 style={{ background: '#ef4444', boxShadow: '0 0 20px rgba(239, 68, 68, 0.3)' }}
               >
                 Delete All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletePicoId && (
+        <div className="modal-overlay">
+          <div className="modal-backdrop" onClick={() => setDeletePicoId(null)}></div>
+          <div className="modal-content">
+            <div className="modal-header">
+              <h2 className="modal-title">Delete Persona</h2>
+              <button onClick={() => setDeletePicoId(null)} className="modal-close">&times;</button>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
+              Are you sure you want to permanently delete the persona <strong>"{picos.find(p => p.id === deletePicoId)?.name}"</strong>? This action cannot be undone.
+            </p>
+            <div className="modal-footer" style={{ display: 'flex', gap: '1rem' }}>
+              <button onClick={() => setDeletePicoId(null)} className="submit-btn" style={{ background: 'var(--bg-surface-elevated)', boxShadow: 'none' }}>
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  setPicos(picos.filter(p => p.id !== deletePicoId));
+                  if (selectedPicoId === deletePicoId) setSelectedPicoId(null);
+                  setDeletePicoId(null);
+                }} 
+                className="submit-btn"
+                style={{ background: '#ef4444', boxShadow: '0 0 20px rgba(239, 68, 68, 0.3)' }}
+              >
+                Delete Persona
               </button>
             </div>
           </div>
