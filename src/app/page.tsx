@@ -447,12 +447,16 @@ export default function Home() {
     gmailRefreshToken, setGmailRefreshToken,
     gmailTokenExpiry, setGmailTokenExpiry
   } = useSettings();
-  const { chats, activeChatId, setActiveChatId, createNewChat, addMessage, updateMessage, deleteChat, deleteMessage, renameChat, togglePinChat, updateChatModel, deleteAllChats } = useChat();
   const { 
     activeArtifact, setActiveArtifact, 
     isPanelOpen, setIsPanelOpen, 
     artifacts, addOrUpdateArtifact 
   } = useArtifacts();
+  const { 
+    chats, activeChatId, setActiveChatId, 
+    createNewChat, addMessage, updateMessage, deleteChat, deleteMessage, renameChat, 
+    togglePinChat, updateChatModel, deleteAllChats, importChats 
+  } = useChat();
   
   const lastProcessedContentRef = useRef<string>("");
 
@@ -483,6 +487,7 @@ export default function Home() {
     category?: FileCategory;
   }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const migrationInputRef = useRef<HTMLInputElement>(null);
   
   // Available models format: { id, name, providerId, providerName }
   const [availableModels, setAvailableModels] = useState<any[]>([]);
@@ -580,7 +585,17 @@ export default function Home() {
 
     await Promise.allSettled(fetchPromises);
     
-    setAvailableModels(allModels);
+    // Deduplicate models based on providerId and model id
+    const uniqueModelsMap = new Map();
+    allModels.forEach(m => {
+      const key = `${m.providerId}::${m.id}`;
+      if (!uniqueModelsMap.has(key)) {
+        uniqueModelsMap.set(key, m);
+      }
+    });
+    const uniqueModels = Array.from(uniqueModelsMap.values());
+    
+    setAvailableModels(uniqueModels);
 
     if (allModels.length > 0 && !selectedModelId) {
       setSelectedModelId(allModels[0].id);
@@ -1005,16 +1020,76 @@ Format:
         }
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        console.log('Stream stopped by user');
-      } else {
-        console.warn(err);
-        updateMessage(targetChatId, assistantId, "Sorry, I encountered an error connecting to the API.");
-      }
+      if (err.name === 'AbortError') return;
+      console.error("Stream failed:", err);
+      updateMessage(targetChatId, assistantId, `Error: ${err.message || "Something went wrong."}`);
     } finally {
       setIsTyping(false);
       abortControllerRef.current = null;
     }
+  };
+
+  const handleExportData = () => {
+    const data = {
+      version: "1.0",
+      timestamp: Date.now(),
+      settings: {
+        providers,
+        picos,
+        selectedPicoId,
+        selectedModelId,
+        selectedProviderId,
+        tavilyApiKey,
+        defaultWebSearch,
+        gmailAccessToken,
+        gmailRefreshToken,
+        gmailTokenExpiry
+      },
+      chats
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mimi_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (!data.settings || !data.chats) throw new Error("Invalid backup format");
+
+        // Update Settings
+        if (data.settings.providers) setProviders(data.settings.providers);
+        if (data.settings.picos) setPicos(data.settings.picos);
+        if (data.settings.selectedPicoId) setSelectedPicoId(data.settings.selectedPicoId);
+        if (data.settings.selectedModelId) setSelectedModelId(data.settings.selectedModelId);
+        if (data.settings.selectedProviderId) setSelectedProviderId(data.settings.selectedProviderId);
+        if (data.settings.tavilyApiKey) setTavilyApiKey(data.settings.tavilyApiKey);
+        if (data.settings.defaultWebSearch !== undefined) setDefaultWebSearch(data.settings.defaultWebSearch);
+        if (data.settings.gmailAccessToken) setGmailAccessToken(data.settings.gmailAccessToken);
+        if (data.settings.gmailRefreshToken) setGmailRefreshToken(data.settings.gmailRefreshToken);
+        if (data.settings.gmailTokenExpiry) setGmailTokenExpiry(data.settings.gmailTokenExpiry);
+
+        // Update Chats
+        importChats(data.chats);
+
+        alert("Data imported successfully! Your settings and chats have been restored.");
+        setShowSettings(false);
+      } catch (err) {
+        console.error("Import failed:", err);
+        alert("Failed to import data. Please ensure the file is a valid MIMI backup.");
+      }
+    };
+    reader.readAsText(file);
   };
 
   const stopMessage = () => {
@@ -1848,8 +1923,41 @@ Format:
                         className="submit-btn" 
                         style={{ width: 'auto', padding: '0.75rem 1.5rem', background: '#ef4444', color: 'white', border: 'none', boxShadow: '0 0 20px rgba(239, 68, 68, 0.2)' }}
                       >
-                        Delete All Chat History
+                        Delete All Data
                       </button>
+                    </div>
+
+                    <div style={{ marginTop: '2rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', padding: '1.5rem', borderRadius: '1.25rem' }}>
+                      <h4 style={{ margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1.1rem', height: '1.1rem'}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Data Migration
+                      </h4>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                        Move your providers, settings, and chat history between browsers (e.g. Edge to Chrome).
+                      </p>
+                      <div style={{ display: 'flex', gap: '1rem' }}>
+                        <button 
+                          onClick={handleExportData}
+                          className="submit-btn" 
+                          style={{ width: 'auto', padding: '0.75rem 1.5rem', background: 'var(--bg-surface-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border-light)', boxShadow: 'none' }}
+                        >
+                          Export Backup
+                        </button>
+                        <button 
+                          onClick={() => migrationInputRef.current?.click()}
+                          className="submit-btn" 
+                          style={{ width: 'auto', padding: '0.75rem 1.5rem', background: 'var(--accent-base)', color: 'white', border: 'none' }}
+                        >
+                          Import Backup
+                        </button>
+                        <input 
+                          type="file" 
+                          ref={migrationInputRef} 
+                          style={{ display: 'none' }} 
+                          accept=".json"
+                          onChange={handleImportData}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}

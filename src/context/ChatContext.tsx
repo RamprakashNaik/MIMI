@@ -46,6 +46,7 @@ interface ChatContextType {
   togglePinChat: (chatId: string) => void;
   updateChatModel: (chatId: string, providerId: string, modelId: string) => void;
   deleteAllChats: () => void;
+  importChats: (chats: Chat[]) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -195,10 +196,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setActiveChatId(null);
   };
 
+  const importChats = (newChats: Chat[]) => {
+    setChats(newChats);
+    if (newChats.length > 0) {
+      setActiveChatId(newChats[0].id);
+    }
+  };
+
   const contextValue = React.useMemo(() => ({
     chats, activeChatId, setActiveChatId,
     createNewChat, addMessage, updateMessage, deleteChat, deleteMessage, renameChat, 
-    togglePinChat, updateChatModel, deleteAllChats 
+    togglePinChat, updateChatModel, deleteAllChats, importChats 
   }), [chats, activeChatId]);
 
   return (
