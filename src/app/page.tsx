@@ -11,6 +11,8 @@ import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 import { extractTextFromFile, formatDocumentForPrompt, getFileCategory, FileCategory } from "@/lib/fileParser";
 import { useArtifacts, Artifact, ArtifactType } from "@/context/ArtifactContext";
+import { useMemory } from "@/context/MemoryContext";
+import { MemoryVault } from "@/components/MemoryVault";
 
 // ...
 
@@ -483,6 +485,7 @@ export default function Home() {
     createNewChat, addMessage, updateMessage, deleteChat, deleteMessage, renameChat, 
     togglePinChat, updateChatModel, deleteAllChats, importChats 
   } = useChat();
+  const { queryMemories, addMemory, memories, isRecalling } = useMemory();
   
   const lastProcessedContentRef = useRef<string>("");
 
@@ -497,7 +500,7 @@ export default function Home() {
   const [deletePicoId, setDeletePicoId] = useState<string | null>(null);
   const [showPicoModal, setShowPicoModal] = useState(false);
   const [picoForm, setPicoForm] = useState({ name: "", systemPrompt: "", firstMessage: "" });
-  const [settingsTab, setSettingsTab] = useState<'ai' | 'integrations' | 'advanced'>('ai');
+  const [settingsTab, setSettingsTab] = useState<'ai' | 'integrations' | 'memory' | 'advanced'>('ai');
   const [selectedEmail, setSelectedEmail] = useState<any | null>(null);
   const [isFetchingEmail, setIsFetchingEmail] = useState(false);
   
@@ -1000,9 +1003,15 @@ Format:
       ? `\n\n<gmail_results>\n${gmailData.map((e, i) => `[Email ${i+1}] From: ${e.from}, Subject: ${e.subject}, Date: ${e.date}\nSnippet: ${e.snippet}`).join("\n\n")}\n</gmail_results>\n\nIMPORTANT: The user can already see these emails in an interactive "Emails Found" panel. Do NOT list the emails or their subjects in your response. Simply use the information to answer the user's question directly.`
       : "";
 
+    // Memory Recall
+    const recalledMemories = await queryMemories(textToSend);
+    const MEMORY_INSTRUCTIONS = recalledMemories.length > 0
+      ? `\n\n<recalled_context>\nYou remember these relevant facts/preferences from past conversations:\n${recalledMemories.map((m, i) => `[Fact ${i+1}] ${m.content}`).join("\n")}\n</recalled_context>\nUse this context to personalize your answer.`
+      : "";
+
     const systemContent = activePico && activePico.systemPrompt 
-      ? `${activePico.systemPrompt}\n\n${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}${GMAIL_INSTRUCTIONS}`
-      : `${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}${GMAIL_INSTRUCTIONS}`;
+      ? `${activePico.systemPrompt}\n\n${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}${GMAIL_INSTRUCTIONS}${MEMORY_INSTRUCTIONS}`
+      : `${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}${GMAIL_INSTRUCTIONS}${MEMORY_INSTRUCTIONS}`;
 
     formattedMessages = [
       { role: "system", content: systemContent },
@@ -1020,6 +1029,8 @@ Format:
       searchResults: searchData.length > 0 ? searchData : undefined,
       gmailResults: gmailData.length > 0 ? gmailData : undefined
     });
+
+    let accumulatedContent = "";
 
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -1048,7 +1059,6 @@ Format:
       const decoder = new TextDecoder("utf-8");
       
       let done = false;
-      let accumulatedContent = "";
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
@@ -1083,6 +1093,61 @@ Format:
     } finally {
       setTypingChatIds(prev => ({ ...prev, [targetChatId!]: false }));
       abortControllersRef.current.delete(targetChatId);
+
+      // Trigger Memory Distillation after message complete
+      if (accumulatedContent.length > 20 || textToSend.length > 20) {
+        distillMemories(targetChatId, userMessage, accumulatedContent);
+      }
+    }
+  };
+
+  const distillMemories = async (chatId: string, latestUserMessage?: Message, latestAssistantContent?: string) => {
+    const chat = chats.find(c => c.id === chatId);
+    if (!chat) return;
+
+    // Build the "Recent Knowledge" string
+    let userText = latestUserMessage?.content || "";
+    if (latestUserMessage?.attachments) {
+      const attachmentContext = latestUserMessage.attachments
+        .filter(a => a.extractedText)
+        .map(a => `[File: ${a.name}]\n${a.extractedText}`)
+        .join("\n\n");
+      if (attachmentContext) userText = `${attachmentContext}\n\nUser Message: ${userText}`;
+    }
+
+    const recentHistory = latestUserMessage && latestAssistantContent
+      ? `user: ${userText}\nassistant: ${latestAssistantContent}`
+      : chat.messages.slice(-4).map(m => `${m.role}: ${m.content}`).join("\n");
+
+    const activeProvider = providers.find(p => p.id === selectedProviderId);
+    if (!activeProvider) return;
+
+    try {
+      const res = await fetch("/api/memory/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          history: recentHistory,
+          provider: activeProvider,
+          modelId: selectedModelId
+        })
+      });
+
+      if (res.ok) {
+        const { memories: extracted } = await res.json();
+        for (const m of extracted) {
+          // Avoid duplicates by simple string check
+          const isDuplicate = memories.some(existing => 
+            existing.content.toLowerCase().includes(m.content.toLowerCase()) || 
+            m.content.toLowerCase().includes(existing.content.toLowerCase())
+          );
+          if (!isDuplicate) {
+            await addMemory(m.content, m.type, m.importance);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Memory distillation failed:", err);
     }
   };
 
@@ -1539,6 +1604,15 @@ Format:
                       <span>Searching the web...</span>
                     </div>
                   )}
+
+                  {isRecalling && (
+                    <div className="searching-indicator" style={{ color: 'var(--accent-base)' }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spinning" style={{width: '14px', height: '14px'}}>
+                        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                      </svg>
+                      <span>Recalling memories...</span>
+                    </div>
+                  )}
                   
                   {isCurrentChatTyping && messages[messages.length - 1]?.role === 'user' && (
                     <div className="message-wrapper assistant typing-indicator">
@@ -1790,6 +1864,18 @@ Format:
                   Integrations
                 </button>
                 <button 
+                  onClick={() => setSettingsTab('memory')}
+                  style={{ 
+                    display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: 'none',
+                    background: settingsTab === 'memory' ? 'var(--bg-surface-elevated)' : 'transparent',
+                    color: settingsTab === 'memory' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    cursor: 'pointer', textAlign: 'left', fontWeight: settingsTab === 'memory' ? 600 : 400, transition: 'all 0.2s'
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '1rem', height: '1rem'}}><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                  Memory Vault
+                </button>
+                <button 
                   onClick={() => setSettingsTab('advanced')}
                   style={{ 
                     display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: 'none',
@@ -1970,6 +2056,10 @@ Format:
                       </div>
                     </div>
                   </div>
+                )}
+
+                {settingsTab === 'memory' && (
+                  <MemoryVault />
                 )}
 
                 {settingsTab === 'advanced' && (

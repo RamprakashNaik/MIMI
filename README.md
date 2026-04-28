@@ -10,6 +10,7 @@ MIMI is a highly optimized, local-first Next.js web interface designed to provid
 * **Intelligent Auto-Titling:** MIMI runs an asynchronous sub-agent that detects brand new conversation threads. It silently reads your first prompt and dynamically updates the chat title in the sidebar with a precise, 3-word summary of the chat's agenda without interrupting the main text stream.
 * **⚡ Parallel Multi-Chat Generation:** MIMI supports per-chat state management, allowing you to switch between different conversations and start new prompts while other chats continue to generate and stream in the background.
 * **📧 Pro Gmail Integration:** Connect your Google account to search your inbox and **view full HTML emails** directly within the chat interface, rendered safely in a sandboxed viewer.
+- **🧠 Persistent Memory Engine**: An intelligent long-term memory system that learns your preferences, project details, and facts across all chats using local semantic recall (Vector DB).
 * **🌐 Hybrid Search Engine:** Integrated web search (via Tavily) provides the AI with real-time internet context, complete with source favicons and citation panels.
 * **Premium Markdown & Math rendering:** The frontend integrates `react-markdown` alongside `rehype-katex` and `remark-math`. Complex LaTeX arithmetic code automatically resolves into textbook-grade visualizations. Standalone programming code utilizes dedicated dark-mode containers topped with convenient `Copy` tooling. 
 
