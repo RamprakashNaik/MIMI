@@ -37,9 +37,11 @@ export async function POST(req: NextRequest) {
         });
         
         const headers = detail.data.payload?.headers || [];
-        const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
-        const from = headers.find(h => h.name === 'From')?.value || 'Unknown Sender';
-        const date = headers.find(h => h.name === 'Date')?.value || '';
+        const getHeader = (name: string) => headers.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value;
+        
+        const subject = getHeader('Subject') || 'No Subject';
+        const from = getHeader('From') || 'Unknown Sender';
+        const date = getHeader('Date') || '';
 
         return {
           id: msg.id,

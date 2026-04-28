@@ -24,6 +24,28 @@
   --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
   --shadow-glow: 0 0 20px var(--accent-glow);
   --shadow-modal: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-bg: rgba(15, 18, 24, 0.7);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
 }
 
 * {
@@ -56,6 +78,16 @@
 @keyframes slide-in-left {
   from { opacity: 0; transform: translateX(-12px); }
   to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 body {
@@ -470,11 +502,26 @@ svg {
 }
 
 .message-wrapper.assistant .message-bubble {
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--border-light);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
   color: var(--text-primary);
   border-radius: 1.5rem 1.5rem 1.5rem 0.25rem;
   box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.message-wrapper.assistant .message-bubble::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-glow), transparent);
+  opacity: 0.5;
 }
 
 /* Typing Indicator */
@@ -1703,29 +1750,32 @@ svg {
 
 /* ── Source Panel ── */
 .source-panel {
-  margin-top: 0.5rem;
-  margin-bottom: 0.75rem;
+  margin-top: 0.75rem;
+  margin-bottom: 1rem;
+  animation: fadeIn 0.4s ease;
 }
 
 .source-toggle {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.35rem 0.65rem;
-  background: var(--bg-surface);
+  padding: 0.45rem 0.85rem;
+  background: var(--bg-surface-elevated);
   border: 1px solid var(--border-light);
   border-radius: 2rem;
   color: var(--text-secondary);
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .source-toggle:hover {
-  background: var(--bg-surface-elevated);
+  background: var(--bg-surface);
   border-color: var(--accent-base);
   color: var(--text-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
 .source-list {
@@ -1734,9 +1784,9 @@ svg {
   gap: 0.5rem;
   margin-top: 0.5rem;
   padding: 0.75rem;
-  background: var(--bg-surface-elevated);
+  background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border-light);
-  border-radius: 0.75rem;
+  border-radius: 1rem;
   max-width: 100%;
 }
 
@@ -1744,15 +1794,18 @@ svg {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem;
-  border-radius: 0.5rem;
+  padding: 0.65rem;
+  border-radius: 0.75rem;
   text-decoration: none;
-  transition: background 0.2s;
+  transition: all 0.2s ease;
   min-width: 0;
+  border: 1px solid transparent;
 }
 
 .source-item:hover {
-  background: var(--bg-glass);
+  background: var(--bg-surface-elevated);
+  border-color: var(--border-light);
+  transform: translateX(4px);
 }
 
 .source-index {
@@ -1760,7 +1813,8 @@ svg {
   width: 1.25rem;
   height: 1.25rem;
   background: var(--bg-deep);
-  border-radius: 50%;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1773,10 +1827,11 @@ svg {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
 }
 
 .source-title {
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -1785,7 +1840,7 @@ svg {
 }
 
 .source-url {
-  font-size: 0.65rem;
+  font-size: 0.6875rem;
   color: var(--text-tertiary);
 }
 
@@ -1809,8 +1864,117 @@ svg {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.spinning {
-  animation: spin 2s linear infinite;
+/* ── Gmail Results Panel ── */
+.gmail-panel {
+  margin-top: 1rem;
+  margin-bottom: 1.25rem;
+  animation: slide-up 0.4s cubic-bezier(0, 0, 0.2, 1);
+}
+
+.gmail-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.65rem 1rem;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: 2rem;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: var(--shadow-sm);
+}
+
+.gmail-toggle:hover {
+  background: var(--bg-surface);
+  border-color: var(--accent-base);
+  transform: translateY(-1px);
+}
+
+.gmail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem;
+}
+
+.gmail-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-light);
+  border-radius: 1rem;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.gmail-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent-base);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.gmail-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--accent-glow);
+  transform: translateX(4px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.gmail-item:hover::before {
+  opacity: 1;
+}
+
+.gmail-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+  gap: 1rem;
+}
+
+.gmail-item-subject {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.gmail-item-date {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.gmail-item-from {
+  font-size: 0.8125rem;
+  color: var(--accent-glow);
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.gmail-item-snippet {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 @keyframes spin {

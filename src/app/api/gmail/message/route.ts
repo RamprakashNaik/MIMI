@@ -33,14 +33,25 @@ export async function POST(req: NextRequest) {
     const date = headers.find(h => h.name === 'Date')?.value || '';
 
     // Extract body
-    let body = "";
-    if (payload?.parts) {
-      const textPart = payload.parts.find(p => p.mimeType === 'text/plain') || payload.parts[0];
-      if (textPart?.body?.data) {
-        body = Buffer.from(textPart.body.data, 'base64').toString();
+    let textBody = "";
+    let htmlBody = "";
+    
+    const extractPart = (part: any) => {
+      const mimeType = part.mimeType;
+      const data = part.body?.data;
+      if (!data) return;
+      
+      const decoded = Buffer.from(data, 'base64').toString();
+      if (mimeType === 'text/plain') textBody = decoded;
+      else if (mimeType === 'text/html') htmlBody = decoded;
+      
+      if (part.parts) {
+        part.parts.forEach(extractPart);
       }
-    } else if (payload?.body?.data) {
-      body = Buffer.from(payload.body.data, 'base64').toString();
+    };
+
+    if (payload) {
+      extractPart(payload);
     }
 
     return NextResponse.json({
@@ -48,8 +59,11 @@ export async function POST(req: NextRequest) {
       subject,
       from,
       date,
-      body,
-      snippet: response.data.snippet
+      body: htmlBody || textBody,
+      textBody: textBody,
+      htmlBody: htmlBody,
+      snippet: response.data.snippet,
+      isHtml: !!htmlBody
     });
   } catch (error: any) {
     console.error('Gmail Message Error:', error);

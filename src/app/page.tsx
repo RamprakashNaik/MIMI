@@ -284,33 +284,41 @@ const DocChip = ({ name, type, fileSize, compact }: { name: string; type: string
 
 // ── SourcePanel ─────────────────────────────────────────────────────────────
 
-const GmailPanel = ({ emails }: { emails: any[] }) => {
-  const [isOpen, setIsOpen] = useState(false);
+const GmailPanel = ({ emails, onEmailClick }: { emails: any[]; onEmailClick: (messageId: string) => void }) => {
+  const [isOpen, setIsOpen] = useState(true);
   
   if (!emails || emails.length === 0) return null;
 
   return (
-    <div className="source-panel">
-      <button className="source-panel-toggle" onClick={() => setIsOpen(!isOpen)}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:'14px', height:'14px'}}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+    <div className="gmail-panel">
+      <button className="gmail-toggle" onClick={() => setIsOpen(!isOpen)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <div style={{ background: 'rgba(139, 92, 246, 0.2)', padding: '4px', borderRadius: '6px', display: 'flex' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:'14px', height:'14px', color: 'var(--accent-base)'}}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+          </div>
           <span>Emails Found ({emails.length})</span>
         </div>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '12px', height: '12px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '12px', height: '12px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', opacity: 0.5 }}>
           <polyline points="6 9 12 15 18 9"></polyline>
         </svg>
       </button>
       
       {isOpen && (
-        <div className="source-list" style={{ gap: '0.75rem' }}>
+        <div className="gmail-list">
           {emails.map((email, i) => (
-            <div key={i} className="source-item" style={{ padding: '0.75rem', cursor: 'default' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{email.subject}</span>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>{new Date(email.date).toLocaleDateString()}</span>
+            <div 
+              key={i} 
+              className="gmail-item" 
+              onClick={() => onEmailClick(email.id)}
+            >
+              <div className="gmail-item-header">
+                <span className="gmail-item-subject">{email.subject}</span>
+                <span className="gmail-item-date">
+                  {email.date ? new Date(email.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Unknown Date'}
+                </span>
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--accent-glow)', marginBottom: '0.5rem' }}>From: {email.from}</div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              <div className="gmail-item-from">From: {email.from}</div>
+              <p className="gmail-item-snippet">
                 {email.snippet}...
               </p>
             </div>
@@ -339,14 +347,32 @@ const SourcePanel = ({ sources }: { sources: { title: string; url: string; conte
       {isOpen && (
         <div className="source-list">
           {sources.map((s, i) => (
-            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="source-item">
-              <span className="source-index">{i + 1}</span>
-              <div className="source-meta">
-                <span className="source-title">{s.title}</span>
-                <span className="source-url">{new URL(s.url).hostname}</span>
-              </div>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:'12px',height:'12px', marginLeft:'auto'}}><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
-            </a>
+            <div key={i} className="source-item" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <a href={s.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', flex: 1, minWidth: 0 }}>
+                <img 
+                  src={`https://www.google.com/s2/favicons?domain=${new URL(s.url).hostname}&sz=32`} 
+                  alt="" 
+                  style={{ width: '16px', height: '16px', borderRadius: '2px' }}
+                />
+                <div className="source-meta">
+                  <span className="source-title">{s.title}</span>
+                  <span className="source-url">{new URL(s.url).hostname}</span>
+                </div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:'12px',height:'12px', marginLeft:'auto'}}><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+              </a>
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  navigator.clipboard.writeText(s.url);
+                }}
+                className="action-icon-btn"
+                title="Copy URL"
+                style={{ marginLeft: '0.5rem', opacity: 0.5 }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '12px', height: '12px'}}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -472,11 +498,13 @@ export default function Home() {
   const [showPicoModal, setShowPicoModal] = useState(false);
   const [picoForm, setPicoForm] = useState({ name: "", systemPrompt: "", firstMessage: "" });
   const [settingsTab, setSettingsTab] = useState<'ai' | 'integrations' | 'advanced'>('ai');
+  const [selectedEmail, setSelectedEmail] = useState<any | null>(null);
+  const [isFetchingEmail, setIsFetchingEmail] = useState(false);
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [chatSearch, setChatSearch] = useState("");
   const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const [typingChatIds, setTypingChatIds] = useState<Record<string, boolean>>({});
   const [isParsing, setIsParsing] = useState(false); // true while extracting doc text
   const [pendingAttachments, setPendingAttachments] = useState<{
     dataUrl?: string;
@@ -500,7 +528,10 @@ export default function Home() {
   const [deleteModalId, setDeleteModalId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+
+  // Helper to check if current chat is typing
+  const isCurrentChatTyping = activeChatId ? !!typingChatIds[activeChatId] : false;
 
   // Derived state
   const activeChat = chats.find(c => c.id === activeChatId);
@@ -706,6 +737,31 @@ export default function Home() {
     return gmailAccessToken;
   };
 
+  const fetchEmailBody = async (messageId: string) => {
+    setIsFetchingEmail(true);
+    try {
+      const validToken = await ensureValidGmailToken();
+      const res = await fetch('/api/gmail/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: validToken,
+          refreshToken: gmailRefreshToken,
+          messageId
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedEmail(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch email:", err);
+    } finally {
+      setIsFetchingEmail(false);
+    }
+  };
+
   // ── Gmail Auth Listener ──
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -797,7 +853,7 @@ export default function Home() {
 
   const sendMessage = async (overrideInput?: string, isRegenerating: boolean = false) => {
     const textToSend = overrideInput !== undefined ? overrideInput : input;
-    if (isTyping || !textToSend.trim() || !selectedModelId || !selectedProviderId) {
+    if (isCurrentChatTyping || !textToSend.trim() || !selectedModelId || !selectedProviderId) {
       if (!selectedModelId || !selectedProviderId) setShowSettings(true);
       return;
     }
@@ -835,7 +891,8 @@ export default function Home() {
         setInput("");
       }
     }
-    setIsTyping(true);
+    
+    setTypingChatIds(prev => ({ ...prev, [targetChatId!]: true }));
 
     if (isFirstMessage && !isRegenerating) {
       generateTitleForChat(targetChatId, textToSend, activeProvider, selectedModelId);
@@ -940,7 +997,7 @@ Format:
       : "";
 
     const GMAIL_INSTRUCTIONS = gmailData.length > 0
-      ? `\n\nYou have found the following relevant emails from the user's Gmail inbox. Use these to answer the user's question accurately. Mention who the email is from and the date if relevant.\n\n<gmail_results>\n${gmailData.map((e, i) => `[Email ${i+1}] From: ${e.from}, Subject: ${e.subject}, Date: ${e.date}\nSnippet: ${e.snippet}`).join("\n\n")}\n</gmail_results>`
+      ? `\n\n<gmail_results>\n${gmailData.map((e, i) => `[Email ${i+1}] From: ${e.from}, Subject: ${e.subject}, Date: ${e.date}\nSnippet: ${e.snippet}`).join("\n\n")}\n</gmail_results>\n\nIMPORTANT: The user can already see these emails in an interactive "Emails Found" panel. Do NOT list the emails or their subjects in your response. Simply use the information to answer the user's question directly.`
       : "";
 
     const systemContent = activePico && activePico.systemPrompt 
@@ -953,7 +1010,7 @@ Format:
     ];
     
     const abortController = new AbortController();
-    abortControllerRef.current = abortController;
+    abortControllersRef.current.set(targetChatId, abortController);
 
     const assistantId = Date.now().toString() + Math.random().toString();
     addMessage(targetChatId, { 
@@ -1024,8 +1081,8 @@ Format:
       console.error("Stream failed:", err);
       updateMessage(targetChatId, assistantId, `Error: ${err.message || "Something went wrong."}`);
     } finally {
-      setIsTyping(false);
-      abortControllerRef.current = null;
+      setTypingChatIds(prev => ({ ...prev, [targetChatId!]: false }));
+      abortControllersRef.current.delete(targetChatId);
     }
   };
 
@@ -1093,14 +1150,18 @@ Format:
   };
 
   const stopMessage = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    if (activeChatId) {
+      const controller = abortControllersRef.current.get(activeChatId);
+      if (controller) {
+        controller.abort();
+        abortControllersRef.current.delete(activeChatId);
+      }
+      setTypingChatIds(prev => ({ ...prev, [activeChatId]: false }));
     }
-    setIsTyping(false);
   };
 
   const regenerateMessage = (assistantMsgId: string) => {
-    if (!activeChat || isTyping) return;
+    if (!activeChat || isCurrentChatTyping) return;
     
     const msgIndex = activeChat.messages.findIndex(m => m.id === assistantMsgId);
     if (msgIndex === -1) return;
@@ -1115,7 +1176,7 @@ Format:
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!isTyping) sendMessage();
+      if (!isCurrentChatTyping) sendMessage();
     }
   };
 
@@ -1312,7 +1373,12 @@ Format:
                   onContextMenu={(e) => handleContextMenu(e, chat.id)}
                 >
                   <div className="history-item-content">
-                    <span className="history-item-title">{chat.title}</span>
+                    <span className="history-item-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      {chat.title}
+                      {typingChatIds[chat.id] && (
+                        <span className="typing-dot" style={{ width: '6px', height: '6px', background: 'var(--accent-base)', flexShrink: 0 }}></span>
+                      )}
+                    </span>
                     {chat.pinned && (
                       <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" className="pin-indicator" style={{width: '12px', height: '12px'}}>
                         <path d="M16 11V5.5a4 4 0 00-8 0V11l-2 3v1h5.5v5h1v-5H18v-1l-2-3zm-6-5.5a2 2 0 014 0V11H10V5.5z"></path>
@@ -1405,7 +1471,7 @@ Format:
                         )}
 
                         {msg.role === 'assistant' && msg.gmailResults && (
-                          <GmailPanel emails={msg.gmailResults} />
+                          <GmailPanel emails={msg.gmailResults} onEmailClick={fetchEmailBody} />
                         )}
                         
                         {msg.role === 'assistant' && !msg.content ? (
@@ -1474,7 +1540,7 @@ Format:
                     </div>
                   )}
                   
-                  {isTyping && messages[messages.length - 1]?.role === 'user' && (
+                  {isCurrentChatTyping && messages[messages.length - 1]?.role === 'user' && (
                     <div className="message-wrapper assistant typing-indicator">
                       <span className="message-label">MIMI</span>
                       <div className="message-bubble">
@@ -1544,7 +1610,7 @@ Format:
                   rows={1}
                   className="chat-input"
                 />
-                {isTyping ? (
+                {isCurrentChatTyping ? (
                   <button 
                     onClick={stopMessage}
                     className="send-button"
@@ -2149,6 +2215,54 @@ Format:
                 Delete Persona
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Email Detail Modal */}
+      {(selectedEmail || isFetchingEmail) && (
+        <div className="modal-overlay" style={{ zIndex: 100 }}>
+          <div className="modal-backdrop" onClick={() => setSelectedEmail(null)}></div>
+          <div className="modal-content" style={{ maxWidth: '1000px', width: '95%', height: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 0 }}>
+            {isFetchingEmail ? (
+              <div style={{ padding: '4rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
+                <div className="typing-dot" style={{ width: '12px', height: '12px' }}></div>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Fetching full email content...</span>
+              </div>
+            ) : selectedEmail && (
+              <>
+                <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
+                    <h2 className="modal-title" style={{ fontSize: '1.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedEmail.subject}</h2>
+                    <div style={{ fontSize: '0.8125rem', color: 'var(--accent-glow)' }}>From: {selectedEmail.from}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{new Date(selectedEmail.date).toLocaleString()}</div>
+                  </div>
+                  <button onClick={() => setSelectedEmail(null)} className="modal-close">&times;</button>
+                </div>
+                <div style={{ flex: 1, overflow: 'hidden', background: selectedEmail.isHtml ? '#ffffff' : 'transparent', color: selectedEmail.isHtml ? '#000000' : 'var(--text-primary)' }}>
+                  {selectedEmail.isHtml ? (
+                    <iframe 
+                      srcDoc={selectedEmail.htmlBody}
+                      style={{ width: '100%', height: '100%', border: 'none', background: '#ffffff', display: 'block' }}
+                      sandbox="allow-popups allow-popups-to-escape-sandbox allow-scripts"
+                      title="Email Content"
+                    />
+                  ) : (
+                    <div style={{ padding: '1.5rem', fontSize: '0.9375rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                      {selectedEmail.textBody || selectedEmail.body || selectedEmail.snippet}
+                    </div>
+                  )}
+                </div>
+                <div className="modal-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button 
+                    className="submit-btn" 
+                    style={{ width: 'auto', padding: '0.5rem 1.5rem', background: 'var(--bg-surface-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border-light)' }}
+                    onClick={() => setSelectedEmail(null)}
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
