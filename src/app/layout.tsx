@@ -3,6 +3,7 @@ import { SettingsProvider } from "@/context/SettingsContext";
 import { ChatProvider } from "@/context/ChatContext";
 import { ArtifactProvider } from "@/context/ArtifactContext";
 import { MemoryProvider } from "@/context/MemoryContext";
+import { AgentProvider } from "@/context/AgentContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,11 +22,13 @@ export default function RootLayout({
         <SettingsProvider>
           <ChatProvider>
             <MemoryProvider>
-              <ArtifactProvider>
-                <div className="app-container">
-                  {children}
-                </div>
-              </ArtifactProvider>
+              <AgentProvider>
+                <ArtifactProvider>
+                  <div className="app-container">
+                    {children}
+                  </div>
+                </ArtifactProvider>
+              </AgentProvider>
             </MemoryProvider>
           </ChatProvider>
         </SettingsProvider>

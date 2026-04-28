@@ -13,6 +13,8 @@ import { extractTextFromFile, formatDocumentForPrompt, getFileCategory, FileCate
 import { useArtifacts, Artifact, ArtifactType } from "@/context/ArtifactContext";
 import { useMemory } from "@/context/MemoryContext";
 import { MemoryVault } from "@/components/MemoryVault";
+import { useAgent, Task, TaskPlan } from "@/context/AgentContext";
+import { TaskBoard } from "@/components/TaskBoard";
 
 // ...
 
@@ -483,9 +485,10 @@ export default function Home() {
   const { 
     chats, activeChatId, setActiveChatId, 
     createNewChat, addMessage, updateMessage, deleteChat, deleteMessage, renameChat, 
-    togglePinChat, updateChatModel, deleteAllChats, importChats 
+    togglePinChat, updateChatModel, updateMessagePlan, deleteAllChats, importChats 
   } = useChat();
   const { queryMemories, addMemory, memories, isRecalling } = useMemory();
+  const { currentPlan, setPlan, updateTask, resetAgent, isExecuting, isPlanning, setIsPlanning, setIsExecuting } = useAgent();
   
   const lastProcessedContentRef = useRef<string>("");
 
@@ -518,6 +521,7 @@ export default function Home() {
     category?: FileCategory;
   }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const migrationInputRef = useRef<HTMLInputElement>(null);
   
   // Available models format: { id, name, providerId, providerName }
@@ -570,6 +574,11 @@ export default function Home() {
       }
     }
   }, [activeChatId, chats, picos, addMessage, activeChat]);
+
+  // Reset Agent Plan when switching chats
+  useEffect(() => {
+    resetAgent();
+  }, [activeChatId, resetAgent]);
 
   const fetchModels = async () => {
     if (!providers || providers.length === 0) return;
@@ -854,30 +863,188 @@ export default function Home() {
     }
   };
 
-  const sendMessage = async (overrideInput?: string, isRegenerating: boolean = false) => {
+  const executeAgentPlan = async (initialPlan: TaskPlan, chatId: string, userMessage: Message) => {
+    setPlan(initialPlan);
+    setIsExecuting(true);
+    
+    const taskOutputs: string[] = [];
+    let runningPlan = { ...initialPlan };
+
+    for (const task of runningPlan.tasks) {
+      if (task.tool === 'final_answer') continue;
+
+      updateTask(task.id, { status: 'executing' });
+      runningPlan = { ...runningPlan, tasks: runningPlan.tasks.map(t => t.id === task.id ? { ...t, status: 'executing' } : t) };
+      updateMessagePlan(chatId, userMessage.id, runningPlan);
+      
+      let result = "";
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+        let structuredResult: any = null;
+
+        switch (task.tool) {
+          case 'gmail':
+            const token = await ensureValidGmailToken();
+            if (!token) {
+              result = "Gmail not connected.";
+              break;
+            }
+            const gRes = await fetch("/api/gmail/search", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({ accessToken: token, query: task.description, maxResults: 5 })
+            });
+            if (gRes.ok) {
+              const { messages: gMsgs } = await gRes.json();
+              structuredResult = { type: 'gmail', query: task.description, emails: gMsgs };
+              result = gMsgs.map((m: any) => `[Email] From: ${m.from}, Subject: ${m.subject}, Snippet: ${m.snippet}`).join("\n");
+            } else {
+              result = "Gmail search failed.";
+            }
+            break;
+          case 'search':
+            const sRes = await fetch("/api/search", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({ query: task.description, apiKey: tavilyApiKey })
+            });
+            if (sRes.ok) {
+              const { results: sHits } = await sRes.json();
+              structuredResult = { type: 'search', query: task.description, results: sHits };
+              result = sHits.map((r: any) => `[Web] ${r.title}: ${r.content}`).join("\n");
+            } else {
+              const errData = await sRes.json().catch(() => ({}));
+              result = `Search failed: ${errData.error || sRes.statusText}`;
+            }
+            break;
+          case 'memory':
+            const memoriesFound = await queryMemories(task.description);
+            structuredResult = { type: 'memory', query: task.description, memories: memoriesFound };
+            result = memoriesFound.map(m => `[Memory] ${m.content}`).join("\n");
+            break;
+          case 'files':
+            if (userMessage.attachments) {
+              const fileData = userMessage.attachments.filter(a => a.extractedText);
+              structuredResult = { type: 'files', files: fileData.map(f => ({ name: f.name, snippet: f.extractedText?.substring(0, 500) })) };
+              result = fileData
+                .map(a => `[File: ${a.name}] ${a.extractedText?.substring(0, 1000)}...`)
+                .join("\n");
+            } else {
+              result = "No files attached to analyze.";
+            }
+            break;
+          default:
+            result = `Unknown tool: ${task.tool}`;
+        }
+        
+        clearTimeout(timeoutId);
+        taskOutputs.push(`TASK: ${task.description}\nRESULT: ${result || "No data found."}`);
+        
+        const finalTaskResult = structuredResult || result;
+        updateTask(task.id, { status: 'completed', result: finalTaskResult });
+        runningPlan = { ...runningPlan, tasks: runningPlan.tasks.map(t => t.id === task.id ? { ...t, status: 'completed', result: finalTaskResult } : t) };
+        updateMessagePlan(chatId, userMessage.id, runningPlan);
+        
+      } catch (err: any) {
+        console.error(`Task ${task.id} failed:`, err);
+        const errorMsg = err.name === 'AbortError' ? "Task timed out after 30s." : (err.message || "Unknown error");
+        updateTask(task.id, { status: 'failed', result: errorMsg });
+        runningPlan = { ...runningPlan, tasks: runningPlan.tasks.map(t => t.id === task.id ? { ...t, status: 'failed', result: errorMsg } : t) };
+        updateMessagePlan(chatId, userMessage.id, runningPlan);
+        taskOutputs.push(`TASK: ${task.description}\nFAILED: ${errorMsg}`);
+      }
+    }
+
+    // After all tasks are done, send the final synthesized prompt
+    const finalContext = taskOutputs.join("\n\n---\n\n");
+    setIsExecuting(false);
+    
+    // Sync final plan to history
+    updateMessagePlan(chatId, userMessage.id, runningPlan);
+    
+    await sendMessage(userMessage.content, false, undefined, finalContext);
+  };
+
+  const sendMessage = async (overrideInput?: string, isRegenerating = false, overrideChatId?: string, agentContext?: string) => {
     const textToSend = overrideInput !== undefined ? overrideInput : input;
-    if (isCurrentChatTyping || !textToSend.trim() || !selectedModelId || !selectedProviderId) {
-      if (!selectedModelId || !selectedProviderId) setShowSettings(true);
+    if (isCurrentChatTyping || (!textToSend.trim() && pendingAttachments.length === 0 && !isRegenerating)) return;
+
+    let targetChatId = overrideChatId || activeChatId;
+    if (!targetChatId) {
+      createNewChat(selectedProviderId, selectedModelId, selectedPicoId);
       return;
     }
 
     const activeProvider = providers.find(p => p.id === selectedProviderId);
-    if (!activeProvider) {
-      alert("Selected provider not found. Please check your settings.");
-      setShowSettings(true);
-      return;
-    }
+    if (!activeProvider) return;
 
-    let targetChatId = activeChatId;
-    if (!targetChatId) {
-      createNewChat(selectedProviderId, selectedModelId, selectedPicoId);
-      // We must briefly wait for the react cycle to map the new chat, or mock it dynamically. 
-      // For synchronous safety, we can't reliably rely on targetChatId here without blocking, but createNewChat triggers state which re-renders. 
-      // We will let the useEffect handle empty states securely next time or manually pull it via Context refs.
-      // To strictly avoid a race condition, we return and require the user to hit send again on a perfectly fresh state, OR we mock it.
-      // Since createNewChat triggers an instant dispatch, we'll gracefully return and alert the user it is ready.
-      return;
+    const activeChat = chats.find(c => c.id === targetChatId);
+    const messages = activeChat ? activeChat.messages : [];
+    
+    // --- AGENTIC PLANNING TRIGGER ---
+    if (!agentContext && !isRegenerating) {
+      const complexKeywords = ["search", "email", "gmail", "remember", "check", "find", "analyze", "summarize", "draft"];
+      const isComplex = textToSend.split(/\s+/).length > 12 || complexKeywords.some(k => textToSend.toLowerCase().includes(k));
+      
+      if (isComplex) {
+        // --- OPTIMISTIC UI: Add message with skeleton plan immediately ---
+        const userId = Date.now().toString() + Math.random().toString();
+        const skeletonPlan: TaskPlan = {
+          goal: textToSend,
+          tasks: [{ 
+            id: 'planning-step', 
+            tool: 'planning', 
+            description: 'Architecting execution plan...', 
+            status: 'executing' 
+          }]
+        };
+        
+        const userMessage: Message = { 
+          id: userId, 
+          role: "user", 
+          content: textToSend, 
+          attachments: pendingAttachments.length > 0 ? [...pendingAttachments] : undefined,
+          agentPlan: skeletonPlan
+        };
+        
+        addMessage(targetChatId, userMessage);
+        
+        if (overrideInput === undefined) {
+          setInput("");
+          if (textareaRef.current) textareaRef.current.style.height = 'auto';
+        }
+        setPendingAttachments([]);
+        // ----------------------------------------------------------------
+
+        setIsPlanning(true);
+        try {
+          const planRes = await fetch("/api/agent/plan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ goal: textToSend, provider: activeProvider, modelId: selectedModelId })
+          });
+          
+          if (planRes.ok) {
+            const plan = await planRes.json();
+            if (plan.tasks && plan.tasks.length > 1) {
+              // Update the previously added message with the real plan
+              updateMessagePlan(targetChatId, userId, plan);
+              await executeAgentPlan(plan, targetChatId, userMessage);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn("Planning failed, falling back to direct mode:", err);
+        } finally {
+          setIsPlanning(false);
+        }
+      }
     }
+    // --------------------------------
 
     const attachmentsToSend = [...pendingAttachments];
     setPendingAttachments([]); // Clear visually immediately
@@ -888,10 +1055,11 @@ export default function Home() {
     // Check if this is the first message in the chat to trigger AI auto-title
     const isFirstMessage = !activeChatId || (activeChat && activeChat.messages.length === 0);
 
-    if (!isRegenerating) {
+    if (!isRegenerating && !agentContext) {
       addMessage(targetChatId, userMessage);
       if (overrideInput === undefined) {
         setInput("");
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
       }
     }
     
@@ -902,7 +1070,7 @@ export default function Home() {
     }
 
     let searchData: any[] = [];
-    if (webSearchEnabled) {
+    if (webSearchEnabled && !agentContext) {
       setIsSearching(true);
       try {
         const searchRes = await fetch("/api/search", {
@@ -925,7 +1093,7 @@ export default function Home() {
     const gmailKeywords = ["email", "gmail", "inbox", "message", "mail"];
     const isGmailQuery = gmailKeywords.some(k => textToSend.toLowerCase().includes(k));
 
-    if (isGmailQuery && gmailAccessToken) {
+    if (isGmailQuery && gmailAccessToken && !agentContext) {
       setIsSearchingGmail(true);
       try {
         const validToken = await ensureValidGmailToken();
@@ -1009,9 +1177,14 @@ Format:
       ? `\n\n<recalled_context>\nYou remember these relevant facts/preferences from past conversations:\n${recalledMemories.map((m, i) => `[Fact ${i+1}] ${m.content}`).join("\n")}\n</recalled_context>\nUse this context to personalize your answer.`
       : "";
 
+    // Agent Context
+    const AGENT_INSTRUCTIONS = agentContext 
+      ? `\n\n<agent_execution_results>\nYou have successfully executed a multi-step task plan to fulfill the user's goal. Below are the raw results from your tools. SYNTHESIZE this information into a clear, professional response for the user.\n\n${agentContext}\n</agent_execution_results>`
+      : "";
+
     const systemContent = activePico && activePico.systemPrompt 
-      ? `${activePico.systemPrompt}\n\n${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}${GMAIL_INSTRUCTIONS}${MEMORY_INSTRUCTIONS}`
-      : `${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}${GMAIL_INSTRUCTIONS}${MEMORY_INSTRUCTIONS}`;
+      ? `${activePico.systemPrompt}\n\n${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}${GMAIL_INSTRUCTIONS}${MEMORY_INSTRUCTIONS}${AGENT_INSTRUCTIONS}`
+      : `${ARTIFACT_INSTRUCTIONS}${SEARCH_INSTRUCTIONS}${GMAIL_INSTRUCTIONS}${MEMORY_INSTRUCTIONS}${AGENT_INSTRUCTIONS}`;
 
     formattedMessages = [
       { role: "system", content: systemContent },
@@ -1222,6 +1395,7 @@ Format:
         abortControllersRef.current.delete(activeChatId);
       }
       setTypingChatIds(prev => ({ ...prev, [activeChatId]: false }));
+      resetAgent();
     }
   };
 
@@ -1517,83 +1691,92 @@ Format:
                 </div>
               ) : (
                 <div className="message-list">
-                  {messages.map((msg) => (
-                    <div key={msg.id} className={`message-wrapper ${msg.role}`}>
-                      <span className="message-label">{msg.role === 'user' ? 'You' : 'MIMI'}</span>
-                      <div className="message-bubble">
-                        {msg.attachments && msg.attachments.length > 0 && (
-                          <div className="message-attachments-display">
-                            {msg.attachments.map((att, i) => (
-                              att.dataUrl
-                                ? <img key={i} src={att.dataUrl} alt={att.name} className="message-attachment-img" />
-                                : <DocChip key={i} name={att.name} type={att.type} fileSize={att.fileSize} />
-                            ))}
-                          </div>
-                        )}
+                  {messages.map((msg, index) => {
+                    const isLastUserMessage = msg.role === 'user' && !messages.slice(index + 1).some(m => m.role === 'user');
+                    return (
+                      <React.Fragment key={msg.id}>
+                        <div className={`message-wrapper ${msg.role}`}>
+                          <span className="message-label">{msg.role === 'user' ? 'You' : 'MIMI'}</span>
+                          <div className="message-bubble">
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="message-attachments-display">
+                                {msg.attachments.map((att, i) => (
+                                  att.dataUrl
+                                    ? <img key={i} src={att.dataUrl} alt={att.name} className="message-attachment-img" />
+                                    : <DocChip key={i} name={att.name} type={att.type} fileSize={att.fileSize} />
+                                ))}
+                              </div>
+                            )}
 
-                        {msg.role === 'assistant' && msg.searchResults && (
-                          <SourcePanel sources={msg.searchResults} />
-                        )}
+                            {msg.role === 'assistant' && msg.searchResults && (
+                              <SourcePanel sources={msg.searchResults} />
+                            )}
 
-                        {msg.role === 'assistant' && msg.gmailResults && (
-                          <GmailPanel emails={msg.gmailResults} onEmailClick={fetchEmailBody} />
+                            {msg.role === 'assistant' && msg.gmailResults && (
+                              <GmailPanel emails={msg.gmailResults} onEmailClick={fetchEmailBody} />
+                            )}
+                            
+                            {msg.role === 'assistant' && !msg.content ? (
+                              <span style={{display:'flex', gap:'0.4rem', alignItems:'center', padding:'0.1rem 0'}}>
+                                <span className="typing-dot"></span>
+                                <span className="typing-dot"></span>
+                                <span className="typing-dot"></span>
+                              </span>
+                            ) : (
+                              <>
+                                <div className="markdown-content">
+                                  <ReactMarkdown 
+                                    remarkPlugins={[remarkGfm, remarkMath]}
+                                    rehypePlugins={[rehypeKatex, rehypeRaw]}
+                                    components={{ 
+                                      code: CodeBlock,
+                                      artifact: ArtifactBox
+                                    } as any}
+                                  >
+                                    {msg.content}
+                                  </ReactMarkdown>
+                                </div>
+                                {msg.role === 'assistant' && msg.content && (
+                              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', paddingLeft: '0.2rem' }}>
+                                <button 
+                                  onClick={() => regenerateMessage(msg.id)}
+                                  className="action-icon-btn"
+                                  title="Regenerate response"
+                                  style={{ 
+                                    background: 'transparent', border: 'none', padding: '0.25rem', borderRadius: '0.4rem', 
+                                    cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center',
+                                    transition: 'all 0.2s'
+                                  }}
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '14px', height: '14px'}}><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(msg.content);
+                                  }}
+                                  className="action-icon-btn"
+                                  title="Copy response"
+                                  style={{ 
+                                    background: 'transparent', border: 'none', padding: '0.25rem', borderRadius: '0.4rem', 
+                                    cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center',
+                                    transition: 'all 0.2s'
+                                  }}
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '14px', height: '14px'}}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                </button>
+                              </div>
+                            )}
+                          </>
                         )}
-                        
-                        {msg.role === 'assistant' && !msg.content ? (
-                          <span style={{display:'flex', gap:'0.4rem', alignItems:'center', padding:'0.1rem 0'}}>
-                            <span className="typing-dot"></span>
-                            <span className="typing-dot"></span>
-                            <span className="typing-dot"></span>
-                          </span>
-                        ) : (
-                          <>
-                            <div className="markdown-content">
-                              <ReactMarkdown 
-                                remarkPlugins={[remarkGfm, remarkMath]}
-                                rehypePlugins={[rehypeKatex, rehypeRaw]}
-                                components={{ 
-                                  code: CodeBlock,
-                                  artifact: ArtifactBox
-                                } as any}
-                              >
-                                {msg.content}
-                              </ReactMarkdown>
-                            </div>
-                            {msg.role === 'assistant' && msg.content && (
-                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', paddingLeft: '0.2rem' }}>
-                            <button 
-                              onClick={() => regenerateMessage(msg.id)}
-                              className="action-icon-btn"
-                              title="Regenerate response"
-                              style={{ 
-                                background: 'transparent', border: 'none', padding: '0.25rem', borderRadius: '0.4rem', 
-                                cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center',
-                                transition: 'all 0.2s'
-                              }}
-                            >
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '14px', height: '14px'}}><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                            </button>
-                            <button 
-                              onClick={() => {
-                                navigator.clipboard.writeText(msg.content);
-                              }}
-                              className="action-icon-btn"
-                              title="Copy response"
-                              style={{ 
-                                background: 'transparent', border: 'none', padding: '0.25rem', borderRadius: '0.4rem', 
-                                cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center',
-                                transition: 'all 0.2s'
-                              }}
-                            >
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width: '14px', height: '14px'}}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                            </button>
                           </div>
+                        </div>
+                        {(msg.agentPlan || (isLastUserMessage && currentPlan)) && (
+                          <TaskBoard plan={(isLastUserMessage && currentPlan) || msg.agentPlan} />
                         )}
-                      </>
-                    )}
-                      </div>
-                    </div>
-                  ))}
+                      </React.Fragment>
+                    );
+                  })}
+                  
                   
                   {isSearching && (
                     <div className="searching-indicator">
@@ -1676,6 +1859,7 @@ Format:
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md" multiple hidden />
                 
                 <textarea 
+                  ref={textareaRef}
                   value={input}
                   onChange={autoResizeTextarea}
                   onKeyDown={handleKeyDown}
@@ -1698,7 +1882,7 @@ Format:
                 ) : (
                   <button 
                     onClick={() => sendMessage()}
-                    disabled={!input.trim() && pendingAttachments.length === 0}
+                    disabled={!input.trim() && pendingAttachments.length === 0 || isPlanning || isExecuting}
                     className="send-button"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: "1.25rem", height: "1.25rem"}}>

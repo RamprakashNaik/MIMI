@@ -20,6 +20,7 @@ export type Message = {
     content: string;
   }[];
   gmailResults?: any[];
+  agentPlan?: any; // TaskPlan (using any to avoid circular import if needed, but we'll try to import)
 };
 
 export type Chat = {
@@ -45,6 +46,7 @@ interface ChatContextType {
   renameChat: (chatId: string, title: string) => void;
   togglePinChat: (chatId: string) => void;
   updateChatModel: (chatId: string, providerId: string, modelId: string) => void;
+  updateMessagePlan: (chatId: string, messageId: string, plan: any) => void;
   deleteAllChats: () => void;
   importChats: (chats: Chat[]) => void;
 }
@@ -191,6 +193,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     ));
   };
 
+  const updateMessagePlan = (chatId: string, messageId: string, plan: any) => {
+    setChats((prev) => prev.map((chat) => {
+      if (chat.id === chatId) {
+        return {
+          ...chat,
+          messages: chat.messages.map((msg) => 
+            msg.id === messageId ? { ...msg, agentPlan: plan } : msg
+          ),
+          updatedAt: Date.now()
+        };
+      }
+      return chat;
+    }));
+  };
+
   const deleteAllChats = () => {
     setChats([]);
     setActiveChatId(null);
@@ -205,7 +222,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const contextValue = React.useMemo(() => ({
     chats, activeChatId, setActiveChatId,
-    createNewChat, addMessage, updateMessage, deleteChat, deleteMessage, renameChat, 
+    createNewChat, addMessage, updateMessage, updateMessagePlan, deleteChat, deleteMessage, renameChat, 
     togglePinChat, updateChatModel, deleteAllChats, importChats 
   }), [chats, activeChatId]);
 
